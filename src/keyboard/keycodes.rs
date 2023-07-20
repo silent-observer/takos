@@ -1,7 +1,9 @@
-#[derive(Debug, Clone, Copy)]
+use core::default;
+
+#[derive(Debug, Clone, Copy, Default)]
 #[repr(u8)]
 pub enum KeyCode {
-    Escape = 0x00,
+    Escape = 0x00, #[default]
     F1,
     F2,
     F3,
@@ -116,4 +118,10 @@ pub enum KeyCode {
 pub enum KeyEvent {
     Pressed(KeyCode),
     Released(KeyCode),
+}
+
+impl Default for KeyEvent {
+    fn default() -> Self {
+        KeyEvent::Pressed(KeyCode::default())
+    }
 }

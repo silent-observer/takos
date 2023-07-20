@@ -1,6 +1,7 @@
 use alloc::{vec::Vec, boxed::Box};
-use futures_util::StreamExt;
+use futures_util::{StreamExt, future::join_all};
 use spin::Mutex;
+use thingbuf::mpsc::{Sender, Receiver, self};
 
 use crate::println;
 
@@ -253,20 +254,26 @@ impl ScancodeState {
     }
 }
 
-static KEYEVENT_LISTENERS: Mutex<Vec<Box<dyn Fn(KeyEvent) + Send>>> = Mutex::new(Vec::new());
+static KEYEVENT_SENDERS: Mutex<Vec<Sender<KeyEvent>>> = Mutex::new(Vec::new());
 
 pub async fn keycode_decoder(scancodes: &mut ScancodeStream) {
     let mut state = ScancodeState::Idle;
     while let Some(scancode) = scancodes.next().await {
         let key_event = state.handle(scancode);
         if let Some(key_event) = key_event {
-            for callback in KEYEVENT_LISTENERS.lock().iter() {
-                callback(key_event);
-            }
+            join_all(
+                KEYEVENT_SENDERS.lock()
+                    .iter()
+                    .map(|s| s.send(key_event))
+            ).await
+                .into_iter()
+                .for_each(|x| x.unwrap());
         }
     }
 }
 
-pub fn add_keyevent_listener(callback: impl Fn(KeyEvent) + Send + 'static) {
-    KEYEVENT_LISTENERS.lock().push(Box::new(callback));
+pub fn get_keyevent_receiver() -> Receiver<KeyEvent> {
+    let (tx, rx) = mpsc::channel(32);
+    KEYEVENT_SENDERS.lock().push(tx);
+    rx
 }

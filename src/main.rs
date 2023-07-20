@@ -9,7 +9,9 @@ extern crate alloc;
 
 use takobl_api::BootData;
 
-use takos::{println, hlt_loop, async_task::{executor::Executor, Task}, keyboard::{keyboard_driver, keycodes::KeyEvent, add_keyevent_listener}};
+use takos::{println, hlt_loop, async_task::{executor::Executor, Task}, keyboard::keyboard_driver};
+use takos::keyboard::{keycodes::KeyEvent, get_keyevent_receiver};
+use thingbuf::mpsc::Receiver;
 
 // This function is called on panic.
 #[panic_handler]
@@ -46,6 +48,12 @@ async fn print_number() {
 
 }
 
+async fn print_keyevents(key_event_receiver: Receiver<KeyEvent>) {
+    while let Some(key_event) = key_event_receiver.recv().await {
+        println!("Key event: {:?}", key_event);
+    }
+}
+
 #[export_name = "_start"]
 pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
     takos::init(boot_data);
@@ -63,13 +71,11 @@ pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
         println!("{:016X}-{:016X}", region.start, region.end());
     }
 
-    add_keyevent_listener(|key_event: KeyEvent| {
-        println!("Key event: {:?}", key_event);
-    });
-
     let mut executor = Executor::new();
     executor.spawn(Task::new(print_number()));
     executor.spawn(Task::new(keyboard_driver()));
+    let reciever = get_keyevent_receiver();
+    executor.spawn(Task::new(print_keyevents(reciever)));
     executor.run();
 
     // println!("Allocating more memory!");
