@@ -1,0 +1,55 @@
+[tasks.build-takobl]
+command = "cargo"
+args = [
+    "build",
+    "--release",
+    "--manifest-path", "./takobl/Cargo.toml",
+    "--config", "./takobl/.cargo/config.toml"
+]
+
+[tasks.build-takos]
+command = "cargo"
+args = [
+    "build",
+    "--release",
+    "--target", "./takos/x86_64-takos.json",
+    "--manifest-path", "./takos/Cargo.toml",
+    "--config", "./takos/.cargo/config.toml"
+]
+
+[tasks.run]
+command = "cargo"
+args = [
+    "run",
+    "--release",
+    "--target", "./takos/x86_64-takos.json",
+    "--manifest-path", "./takos/Cargo.toml",
+    "--config", "./takos/.cargo/config.toml",
+    "--", "${@}"
+]
+dependencies = ["build-takobl"]
+
+[tasks.run-debug]
+command = "cargo"
+args = [
+    "run",
+    "--target", "./takos/x86_64-takos.json",
+    "--manifest-path", "./takos/Cargo.toml",
+    "--config", "./takos/.cargo/config.toml",
+    "--", "${@}"
+]
+dependencies = ["build-takobl"]
+
+[tasks.test]
+command = "cargo"
+args = [
+    "test",
+    "--lib",
+    "--target", "./takos/x86_64-takos.json",
+    "--manifest-path", "./takos/Cargo.toml",
+    "--config", "./takos/.cargo/config.toml"
+]
+# [tasks.copy-takos-test]
+# command = "cp"
+# args = ["takos/target/x86_64-takos/debug/takos", "esp/kernel.elf"]
+# dependencies = ["build-takos-debug"]
