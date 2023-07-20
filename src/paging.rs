@@ -4,7 +4,7 @@ use takobl_api::PHYSICAL_MEMORY_OFFSET;
 use x86_64::VirtAddr;
 use x86_64::registers::control::Cr3;
 use x86_64::registers::model_specific::Msr;
-use x86_64::structures::paging::{OffsetPageTable, PageTable, PhysFrame, Size4KiB};
+use x86_64::structures::paging::{OffsetPageTable, PageTable, PhysFrame};
 
 lazy_static!{
     pub static ref PAGE_TABLE: Mutex<OffsetPageTable<'static>> = unsafe {

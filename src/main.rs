@@ -6,11 +6,10 @@ use core::panic::PanicInfo;
 
 extern crate alloc;
 
-use alloc::vec;
+
 use takobl_api::BootData;
 
-use takos::{println, hlt_loop, allocator::frame_allocator::FRAME_ALLOCATOR, paging::map_writable_page};
-use x86_64::structures::paging::FrameAllocator;
+use takos::{println, hlt_loop};
 
 // This function is called on panic.
 #[panic_handler]

@@ -1,6 +1,5 @@
 use spin::Mutex;
 use x86_64::instructions::port::PortWriteOnly;
-use lazy_static::lazy_static;
 
 const MASTER_PIC_COMMAND_PORT: u16 = 0x20;
 const MASTER_PIC_DATA_PORT: u16 = 0x21;

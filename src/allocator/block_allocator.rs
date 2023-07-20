@@ -3,7 +3,7 @@ use core::{alloc::{GlobalAlloc, Layout}, ptr::null_mut};
 use spin::{Mutex, MutexGuard};
 use x86_64::structures::paging::FrameAllocator;
 
-use crate::{paging::map_writable_page, println, print};
+use crate::paging::map_writable_page;
 
 use super::frame_allocator::FRAME_ALLOCATOR;
 
