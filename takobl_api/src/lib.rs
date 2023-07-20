@@ -2,7 +2,7 @@
 #![no_std]
 
 const PAGE_SIZE: u64 = 4096;
-const MAX_FREE_MEMORY: usize = 16;
+const MAX_FREE_MEMORY: usize = 63;
 
 #[derive(Debug)]
 pub struct FrameBufferData {
@@ -13,26 +13,19 @@ pub struct FrameBufferData {
 }
 
 #[derive(Debug)]
-pub struct KernelStackData {
-    pub stack_start: u64,
-    pub stack_end: u64,
-    pub guard_page: u64
-}
-
-#[derive(Debug)]
 pub struct BootData {
     pub frame_buffer: FrameBufferData,
-    pub stack_data: KernelStackData,
     pub free_memory_map: FreeMemoryMap,
+    pub loader_code: MemoryRegion,
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct FreeMemoryRegion {
+pub struct MemoryRegion {
     pub start: u64,
     pub pages: u64,
 }
 
-impl FreeMemoryRegion {
+impl MemoryRegion {
     #[inline]
     pub fn end(&self) -> u64 {
         self.start + self.pages * PAGE_SIZE
@@ -47,7 +40,7 @@ impl FreeMemoryRegion {
 #[derive(Debug, Clone)]
 pub struct FreeMemoryMap{
     pub count: usize,
-    pub data: [FreeMemoryRegion; MAX_FREE_MEMORY],
+    pub data: [MemoryRegion; MAX_FREE_MEMORY],
 }
 
 
@@ -62,22 +55,12 @@ impl FrameBufferData {
     }
 }
 
-impl KernelStackData {
-    pub fn new() -> KernelStackData {
-        KernelStackData {
-            stack_start: 0,
-            stack_end: 0,
-            guard_page: 0,
-        }
-    }
-}
-
 impl BootData {
     pub fn new() -> BootData {
         BootData {
             frame_buffer: FrameBufferData::new(),
-            stack_data: KernelStackData::new(),
             free_memory_map: FreeMemoryMap::new(),
+            loader_code: MemoryRegion { start: 0, pages: 0 },
         }
     }
 }
@@ -86,11 +69,11 @@ impl FreeMemoryMap {
     pub fn new() -> FreeMemoryMap {
         FreeMemoryMap {
             count: 0,
-            data: [FreeMemoryRegion { start: 0, pages: 0 }; MAX_FREE_MEMORY],
+            data: [MemoryRegion { start: 0, pages: 0 }; MAX_FREE_MEMORY],
         }
     }
 
-    pub fn add(&mut self, region: FreeMemoryRegion) {
+    pub fn add(&mut self, region: MemoryRegion) {
         self.data[self.count] = region;
         self.count += 1;
     }
@@ -104,7 +87,7 @@ impl FreeMemoryMap {
         self.count -= 1;
     }
 
-    fn insert(&mut self, index: usize, region: FreeMemoryRegion) {
+    fn insert(&mut self, index: usize, region: MemoryRegion) {
         assert!(self.count < self.data.len());
         for i in (index..self.count).rev() {
             self.data[i+1] = self.data[i];
@@ -113,7 +96,7 @@ impl FreeMemoryMap {
         self.count += 1;
     }
 
-    pub fn remove(&mut self, region: &FreeMemoryRegion) {
+    pub fn remove(&mut self, region: &MemoryRegion) {
         for i in 0..self.count {
             if self.data[i].start <= region.start {
                 let this_end = self.data[i].end();
@@ -132,19 +115,17 @@ impl FreeMemoryMap {
                     let pages_before = (region.start - self.data[i].start) / PAGE_SIZE;
                     let pages_after = (this_end - region_end) / PAGE_SIZE;
                     self.data[i].pages = pages_before;
-                    self.insert(i+1, FreeMemoryRegion { start: region_end, pages: pages_after });
+                    self.insert(i+1, MemoryRegion { start: region_end, pages: pages_after });
                 }
                 break;
             }
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item=&FreeMemoryRegion> {
+    pub fn iter(&self) -> impl Iterator<Item=&MemoryRegion> {
         self.data[..self.count].iter()
     }
 }
 
 
-pub const PHYSICAL_MEMORY_OFFSET: u64 = 32 * 1024 * 1024 * 1024 * 1024;
-
-pub const PHYSICAL_MEMORY: *mut u8 = PHYSICAL_MEMORY_OFFSET as *mut u8;
+pub const PHYSICAL_MEMORY_OFFSET: u64 = 0xFFFF_C000_0000_0000;
