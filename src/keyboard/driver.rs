@@ -5,9 +5,9 @@ use crossbeam_queue::ArrayQueue;
 use futures_util::{Stream, task::AtomicWaker, StreamExt};
 use x86_64::instructions::port::Port;
 
-use crate::{println, print, keyboard::commands::COMMAND_HANDLER};
+use crate::{println, print};
 
-use super::commands::Command;
+use super::commands;
 
 static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
 static WAKER: AtomicWaker = AtomicWaker::new();
@@ -63,7 +63,6 @@ pub async fn init_ps2_controller(scancodes: &mut ScancodeStream) {
     
     unsafe{ control_port.write(0x20) }; // Read Controller Configuration Byte 
     let ccb = scancodes.next().await.unwrap();
-    print!("CCB: 0x{:02X}", ccb);
     
     let ccb_no_translation = ccb & !0x40;
     unsafe{ control_port.write(0x60) }; // Write Controller Configuration Byte 
@@ -83,9 +82,10 @@ pub async fn keyboard_driver() {
     
     init_ps2_controller(&mut scancodes).await;
     
-    COMMAND_HANDLER.lock().send_command(Command::SetScanCodeSet(3));
+    commands::set_scancode_set(&mut scancodes, 2).await.expect("Couldn't set scancode set");
+    let scancode_set = commands::get_scancode_set(&mut scancodes).await.expect("Couldn't get scancode set");
+    println!{"Scancode set {}", scancode_set};
     while let Some(scancode) = scancodes.next().await {
         print!("{:02X} ", scancode);
-        COMMAND_HANDLER.lock().handle_scancode(scancode);
     }
 }
