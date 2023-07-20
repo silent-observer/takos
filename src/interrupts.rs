@@ -4,6 +4,7 @@ use x86_64::instructions::port::Port;
 use x86_64::registers::control::Cr2;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
+use crate::console::WRITER;
 use crate::{println, pic::{MASTER_PIC_OFFSET, PICS}};
 use crate::gdt::DOUBLE_FAULT_IST_INDEX;
 
@@ -29,7 +30,11 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn double_fault_handler(stack_frame: InterruptStackFrame, error_code: u64) -> ! {
-    panic!("EXCEPTION: DOUBLE FAULT ({:?})\n{:#?}", error_code, stack_frame);
+    if WRITER.lock().frame_buffer().is_init() {
+       panic!("EXCEPTION: DOUBLE FAULT ({:?})\n{:#?}", error_code, stack_frame);
+    } else {
+        loop {}
+    }
 }
 
 extern "x86-interrupt" fn page_fault_handler(stack_frame: InterruptStackFrame, error_code: PageFaultErrorCode) {

@@ -43,6 +43,7 @@ const CAT: &str = r"
 
 async fn print_number() {
     println!("async number: 42");
+
 }
 
 #[export_name = "_start"]
@@ -75,5 +76,5 @@ pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
     // }
     // println!("Success!");
 
-    //hlt_loop();
+    // hlt_loop();
 }

@@ -30,6 +30,10 @@ impl FrameBuffer {
         }
     }
 
+    pub fn is_init(&self) -> bool {
+        !self.base_addr.is_null()
+    }
+
     pub fn new(data: &FrameBufferData) -> FrameBuffer {
         use x86_64::structures::paging::{Mapper, Page, PageTableFlags};
         let physical_address = data.buffer_addr;
