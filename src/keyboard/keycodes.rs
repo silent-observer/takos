@@ -114,14 +114,8 @@ pub enum KeyCode {
     NumPadPeriod
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum KeyEvent {
-    Pressed(KeyCode),
-    Released(KeyCode),
-}
-
-impl Default for KeyEvent {
-    fn default() -> Self {
-        KeyEvent::Pressed(KeyCode::default())
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum KeyState {
+    Released, #[default]
+    Pressed,
 }

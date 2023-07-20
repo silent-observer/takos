@@ -5,7 +5,7 @@ use thingbuf::mpsc::{Sender, Receiver, self};
 
 use crate::println;
 
-use super::{keycodes::{KeyEvent, KeyCode}, driver::ScancodeStream};
+use super::{keycodes::{KeyCode, KeyState}, driver::ScancodeStream, typer::{TyperState, KeyboardEvent}};
 
 enum ScancodeState {
     Idle,
@@ -145,8 +145,10 @@ fn scancode_to_key_extended(byte: u8) -> Option<KeyCode> {
     })
 }
 
+type KeyPressEvent = (KeyState, KeyCode);
+
 impl ScancodeState {
-    fn handle_idle(&mut self, scancode: u8) -> Option<KeyEvent> {
+    fn handle_idle(&mut self, scancode: u8) -> Option<KeyPressEvent> {
         if scancode == 0xF0 {
             *self = ScancodeState::F0;
             None
@@ -158,15 +160,15 @@ impl ScancodeState {
             None
         }else {
             scancode_to_key(scancode)
-                .map(|key| KeyEvent::Pressed(key))
+                .map(|key| (KeyState::Pressed, key))
         }
     }
-    fn handle_f0(&mut self, scancode: u8) -> Option<KeyEvent> {
+    fn handle_f0(&mut self, scancode: u8) -> Option<KeyPressEvent> {
         *self = ScancodeState::Idle;
         scancode_to_key(scancode)
-            .map(|key| KeyEvent::Released(key))
+            .map(|key| (KeyState::Released, key))
     }
-    fn handle_e0(&mut self, scancode: u8) -> Option<KeyEvent> {
+    fn handle_e0(&mut self, scancode: u8) -> Option<KeyPressEvent> {
         if scancode == 0xF0 {
             *self = ScancodeState::E0F0;
             None
@@ -176,27 +178,27 @@ impl ScancodeState {
         } else {
             *self = ScancodeState::Idle;
             scancode_to_key_extended(scancode)
-                .map(|key| KeyEvent::Pressed(key))
+                .map(|key| (KeyState::Pressed, key))
         }
     }
-    fn handle_e0f0(&mut self, scancode: u8) -> Option<KeyEvent> {
+    fn handle_e0f0(&mut self, scancode: u8) -> Option<KeyPressEvent> {
         if scancode == 0x7C {
             *self = ScancodeState::PrintScreenRelease(3);
             None
         } else {
             *self = ScancodeState::Idle;
             scancode_to_key_extended(scancode)
-                .map(|key| KeyEvent::Released(key))
+                .map(|key| (KeyState::Released, key))
         }
     }
 
-    fn handle_print_screen(&mut self, scancode: u8, state: u8) -> Option<KeyEvent> {
+    fn handle_print_screen(&mut self, scancode: u8, state: u8) -> Option<KeyPressEvent> {
         const PRINT_SCREEN_CODE: [u8; 4] = [0xE0, 0x12, 0xE0, 0x7C];
         assert!(state == 2 || state == 3);
         if scancode == PRINT_SCREEN_CODE[state as usize] {
             if state == 3 {
                 *self = ScancodeState::Idle;
-                Some(KeyEvent::Pressed(KeyCode::PrintScreen))
+                Some((KeyState::Pressed, KeyCode::PrintScreen))
             } else {
                 *self = ScancodeState::PrintScreen(state + 1);
                 None
@@ -207,13 +209,13 @@ impl ScancodeState {
         }
     }
 
-    fn handle_print_screen_release(&mut self, scancode: u8, state: u8) -> Option<KeyEvent> {
+    fn handle_print_screen_release(&mut self, scancode: u8, state: u8) -> Option<KeyPressEvent> {
         const PRINT_SCREEN_RELEASE_CODE: [u8; 6] = [0xE0, 0xF0, 0x7C, 0xE0, 0xF0, 0x12];
         assert!(state >= 3 && state < 6);
         if scancode == PRINT_SCREEN_RELEASE_CODE[state as usize] {
             if state == 5 {
                 *self = ScancodeState::Idle;
-                Some(KeyEvent::Released(KeyCode::PrintScreen))
+                Some((KeyState::Released, KeyCode::PrintScreen))
             } else {
                 *self = ScancodeState::PrintScreenRelease(state + 1);
                 None
@@ -224,13 +226,13 @@ impl ScancodeState {
         }
     }
 
-    fn handle_pause(&mut self, scancode: u8, state: u8) -> Option<KeyEvent> {
+    fn handle_pause(&mut self, scancode: u8, state: u8) -> Option<KeyPressEvent> {
         const PAUSE_CODE: [u8; 8] = [0xE1, 0x14, 0x77, 0xE1, 0xF0, 0x14, 0xF0, 0x77];
         assert!(state >= 1 && state < 8);
         if scancode == PAUSE_CODE[state as usize] {
             if state == 7 {
                 *self = ScancodeState::Idle;
-                Some(KeyEvent::Pressed(KeyCode::PauseBreak))
+                Some((KeyState::Pressed, KeyCode::PauseBreak))
             } else {
                 *self = ScancodeState::Pause(state + 1);
                 None
@@ -241,7 +243,7 @@ impl ScancodeState {
         }
     }
 
-    fn handle(&mut self, scancode: u8) -> Option<KeyEvent> {
+    fn handle(&mut self, scancode: u8) -> Option<KeyPressEvent> {
         match *self {
             ScancodeState::Idle => self.handle_idle(scancode),
             ScancodeState::E0 => self.handle_e0(scancode),
@@ -254,17 +256,20 @@ impl ScancodeState {
     }
 }
 
-static KEYEVENT_SENDERS: Mutex<Vec<Sender<KeyEvent>>> = Mutex::new(Vec::new());
+static KEYBOARD_EVENT_SENDERS: Mutex<Vec<Sender<KeyboardEvent>>> = Mutex::new(Vec::new());
 
 pub async fn keycode_decoder(scancodes: &mut ScancodeStream) {
     let mut state = ScancodeState::Idle;
+    let mut typer_state = TyperState::new();
+
     while let Some(scancode) = scancodes.next().await {
         let key_event = state.handle(scancode);
-        if let Some(key_event) = key_event {
+        if let Some((state, key)) = key_event {
+            let keyboard_event = typer_state.handle(key, state);
             join_all(
-                KEYEVENT_SENDERS.lock()
+                KEYBOARD_EVENT_SENDERS.lock()
                     .iter()
-                    .map(|s| s.send(key_event))
+                    .map(|s| s.send(keyboard_event))
             ).await
                 .into_iter()
                 .for_each(|x| x.unwrap());
@@ -272,8 +277,8 @@ pub async fn keycode_decoder(scancodes: &mut ScancodeStream) {
     }
 }
 
-pub fn get_keyevent_receiver() -> Receiver<KeyEvent> {
+pub fn get_keyboard_event_receiver() -> Receiver<KeyboardEvent> {
     let (tx, rx) = mpsc::channel(32);
-    KEYEVENT_SENDERS.lock().push(tx);
+    KEYBOARD_EVENT_SENDERS.lock().push(tx);
     rx
 }
