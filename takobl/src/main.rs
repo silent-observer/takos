@@ -1,5 +1,6 @@
 #![no_main]
 #![no_std]
+#![feature(ascii_char)]
 
 mod paging;
 
@@ -8,6 +9,7 @@ extern crate alloc;
 use core::arch::asm;
 use core::mem::{size_of, transmute};
 
+use alloc::{fmt, format};
 use alloc::{vec, string::String};
 
 use elf::abi::PT_LOAD;
@@ -15,8 +17,9 @@ use elf::endian::AnyEndian;
 use log::info;
 use uefi::data_types::PhysicalAddress;
 use uefi::proto::console::gop::GraphicsOutput;
+use uefi::proto::media::fs::SimpleFileSystem;
 use uefi::{fs::Path, table::boot::PAGE_SIZE};
-use uefi::prelude::*;
+use uefi::{prelude::*, fs};
 use elf::ElfBytes;
 use uefi::table::boot::{AllocateType, MemoryType};
 use takobl_api::{FrameBufferData, BootData};
@@ -33,15 +36,14 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     let kernel_entry = load_kernel(image_handle, &system_table);
     let boot_data = allocate_boot_data(&system_table);
 
-    boot_data.frame_buffer = get_gop_data(system_table.boot_services());
-
     info!("Boot Data ptr: {:?}", boot_data as *mut BootData);
     info!("Boot Data: {:?}", boot_data);
-    print_memory_map(&system_table);
+    print_memory_map(image_handle, &system_table);
 
     let (page_tables, kernel_stack_data, free_memory_map) = create_page_table(system_table.boot_services());
     boot_data.stack_data = kernel_stack_data;
     boot_data.free_memory_map = free_memory_map;
+    boot_data.frame_buffer = get_gop_data(system_table.boot_services());
     info!("Loading page table {:08X}!", page_tables);
     //let rip = x86_64::registers::read_rip();
     //info!("Rip: {:016X}", rip);
@@ -74,10 +76,10 @@ fn load_kernel(image_handle: Handle, system_table: &SystemTable<Boot>)-> Physica
     let mut page_end_index = None;
     for segment in segments {
         if segment.p_type != PT_LOAD { continue; }
-        let segment_start_index = segment.p_paddr / PAGE_SIZE as u64;
-        let mem_size = segment.p_memsz as usize;
-        let mem_pages = (mem_size + (PAGE_SIZE - 1)) / PAGE_SIZE;
-        let segment_end_index = segment_start_index + mem_pages as u64;
+        let segment_start = segment.p_paddr;
+        let segment_end = segment.p_paddr + segment.p_memsz;
+        let segment_start_index = segment_start / PAGE_SIZE as u64;
+        let segment_end_index = (segment_end + (PAGE_SIZE - 1) as u64) / PAGE_SIZE as u64;
         match page_start_index {
             Some(p) if segment_start_index < p => page_start_index = Some(segment_start_index),
             Some(_) => {}
@@ -104,7 +106,7 @@ fn load_kernel(image_handle: Handle, system_table: &SystemTable<Boot>)-> Physica
         let file_size = segment.p_filesz as usize;
         let mem_size = segment.p_memsz as usize;
         let physical_address = segment.p_paddr;
-        info!("Address: {:08X}, size: {}", physical_address, mem_size);
+        info!("Address: 0x{:08X}, size: 0x{:X}", physical_address, mem_size);
         let data = elf.segment_data(&segment).expect("Couldn't get segment data");
         unsafe {
             let dest = physical_address as *mut u8;
@@ -170,7 +172,7 @@ fn allocate_boot_data(system_table: &SystemTable<Boot>) -> &'static mut BootData
 }
 
 #[allow(dead_code)]
-fn print_memory_map(system_table: &SystemTable<Boot>) {
+fn print_memory_map(image_handle: Handle, system_table: &SystemTable<Boot>) {
     let memory_map_size = system_table.boot_services().memory_map_size();
     info!("Memory map size: {}", memory_map_size.map_size);
     let buffer_size = memory_map_size.map_size + 4 * memory_map_size.entry_size;
@@ -182,8 +184,30 @@ fn print_memory_map(system_table: &SystemTable<Boot>) {
         x
     };
 
-    for entry in memory_map.entries() {
-        info!("{:?}: {:?}", entry.phys_start as *mut u8, entry);
-        //system_table.boot_services().stall(100_000);
+    let mut str = String::new();
+
+    for (i, entry) in memory_map.entries().enumerate() {
+        // info!("{:3}: {:08X}..+{:X} (virt {:X}), type = {:?}",
+        //     i,
+        //     entry.phys_start,
+        //     entry.page_count * 0x1000,
+        //     entry.virt_start,
+        //     entry.ty);
+        str.push_str(&format!("{:3}: {:08X}..+{:X} (virt {:X}), type = {:?}\n",
+            i,
+            entry.phys_start,
+            entry.page_count * 0x1000,
+            entry.virt_start,
+            entry.ty));
+        //system_table.boot_services().stall(500_000);
     }
+    info!("{}", str);
+    //system_table.boot_services().stall(10_000_000);
+    
+    info!("Getting file system");
+    let mut fs = system_table.boot_services().get_image_file_system(image_handle)
+        .expect("Couldn't get filesystem");
+    //fs.remove_file(cstr16!("test.txt")).expect("Couldn't delete file");
+    let path = Path::new(cstr16!("test.txt"));
+    fs.write(path, str.as_bytes()).expect("Couldn't write file");
 }

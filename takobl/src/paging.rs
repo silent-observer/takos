@@ -15,7 +15,7 @@ struct PageTableBuilder {
 }
 
 const KERNEL_STACK_SIZE: usize = 5;
-const KERNEL_STACK_END: u64 = 0x1_0000_0000;
+const KERNEL_STACK_END: u64 = 0x100_0000_0000;
 const KERNEL_STACK_START: u64 = KERNEL_STACK_END - (KERNEL_STACK_SIZE * PAGE_SIZE) as u64;
 const KERNEL_STACK_GUARD_PAGE: u64 = KERNEL_STACK_START - PAGE_SIZE as u64;
 
@@ -210,16 +210,16 @@ impl PageTableBuilder {
             self.set_page(physical_address, virtual_address, HUGE_PAGE_FLAGS, addr);
         }
 
-        for i in [0, 1, 2, 5, 6] {
-            let ptr = (addr + i * PAGE_SIZE as u64) as *mut PageTable;
-            let table = unsafe {ptr.as_ref().unwrap()};
-            info!("Table {} at {:?}:", i, ptr);
-            for j in 0..512 {
-                if !table[j].is_unused() {
-                    info!("    {}: {:08X}, {:?}", j, table[j].addr().as_u64(), table[j].flags());
-                }
-            }
-        }
+        // for i in [0, 1, 2, 5, 6] {
+        //     let ptr = (addr + i * PAGE_SIZE as u64) as *mut PageTable;
+        //     let table = unsafe {ptr.as_ref().unwrap()};
+        //     info!("Table {} at {:?}:", i, ptr);
+        //     for j in 0..512 {
+        //         if !table[j].is_unused() {
+        //             info!("    {}: {:08X}, {:?}", j, table[j].addr().as_u64(), table[j].flags());
+        //         }
+        //     }
+        // }
         info!("Total pages: {}", total_pages);
         info!("Total huge pages: {}", huge_pages);
 
