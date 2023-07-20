@@ -1,4 +1,3 @@
-takos/target/
-takobl/target/
-takobl-api/target/
+*/target/
+*/.vscode/
 esp/
