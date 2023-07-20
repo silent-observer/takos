@@ -17,8 +17,8 @@ x86_64 = "0.14.10"
 version = "1.4.0"
 features = ["spin_no_std"]
 
-[profile.dev]
-panic = "abort"
+# [profile.dev]
+# panic = "abort"
 
-[profile.release]
-panic = "abort"
+# [profile.release]
+# panic = "abort"
