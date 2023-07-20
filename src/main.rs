@@ -4,10 +4,12 @@
 
 use core::panic::PanicInfo;
 
+extern crate alloc;
+
+use alloc::vec;
 use takobl_api::BootData;
 
-use takos::{println, allocator::frame_allocator::FRAME_ALLOCATOR, paging::PAGE_TABLE};
-use x86_64::{structures::paging::{FrameAllocator, FrameDeallocator, Mapper, Page, PageTableFlags}, VirtAddr};
+use takos::println;
 
 // This function is called on panic.
 #[panic_handler]
@@ -56,33 +58,17 @@ pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
         println!("{:016X}-{:016X}", region.start, region.end());
     }
 
-    let frame_1 = FRAME_ALLOCATOR.lock().allocate_frame().unwrap();
-    println!("Frame 1 allocated: {:?}", frame_1);
-    let addr = VirtAddr::new(0xABCDE000);
-    unsafe {
-        PAGE_TABLE.lock().map_to(
-            Page::from_start_address(addr).unwrap(),
-            frame_1,
-            PageTableFlags::PRESENT.union(PageTableFlags::WRITABLE),
-            &mut *FRAME_ALLOCATOR.lock()).expect("Failed to map").flush();
-    }
-    println!("Frame 1 mapped to {:?}", addr);
-    
-    let ptr = addr.as_u64() as *mut u8;
-    unsafe {
-       *ptr = 42;
-    }
-    let data = unsafe{*ptr};
-    println!("Read: {}", data);
-    
-    let frame_2 = FRAME_ALLOCATOR.lock().allocate_frame().unwrap();
-    println!("Frame 2 allocated: {:?}", frame_2);
-
-    unsafe {FRAME_ALLOCATOR.lock().deallocate_frame(frame_1)};
-    println!("Frame 1 deallocated");
-
-    let frame_3 = FRAME_ALLOCATOR.lock().allocate_frame().unwrap();
-    println!("Frame 3 allocated: {:?}", frame_3);
+    let mut v1 = vec![1, 2, 3, 4, 5];
+    let v2 = vec![10, 11];
+    assert_eq!(v1[0], 1);
+    assert_eq!(v1[1], 2);
+    assert_eq!(v1[2], 3);
+    assert_eq!(v1[3], 4);
+    assert_eq!(v1[4], 5);
+    assert_eq!(v2[0], 10);
+    assert_eq!(v2[1], 11);
+    println!("V1: {:?}", v1);
+    println!("V2: {:?}", v2);
 
     loop {}
 }

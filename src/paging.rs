@@ -3,7 +3,7 @@ use spin::Mutex;
 use takobl_api::PHYSICAL_MEMORY_OFFSET;
 use x86_64::VirtAddr;
 use x86_64::registers::control::Cr3;
-use x86_64::structures::paging::{OffsetPageTable, PageTable};
+use x86_64::structures::paging::{OffsetPageTable, PageTable, PhysFrame};
 
 lazy_static!{
     pub static ref PAGE_TABLE: Mutex<OffsetPageTable<'static>> = unsafe {
@@ -13,4 +13,44 @@ lazy_static!{
         let page_table: &'static mut PageTable = page_table.as_mut().unwrap();
         Mutex::new(OffsetPageTable::new(page_table, VirtAddr::new(PHYSICAL_MEMORY_OFFSET)))
     };
+}
+
+pub fn map_writable_page(virtual_address: u64, frame: PhysFrame) {
+    use x86_64::structures::paging::{Mapper, Page, PageTableFlags};
+    use crate::allocator::frame_allocator::FRAME_ALLOCATOR;
+
+    unsafe {
+        PAGE_TABLE.lock().map_to(
+            Page::from_start_address(VirtAddr::new(virtual_address)).unwrap(),
+            frame,
+            PageTableFlags::PRESENT.union(PageTableFlags::WRITABLE),
+            &mut *FRAME_ALLOCATOR.lock()).expect("Failed to map").flush();
+    }
+}
+
+#[test_case]
+fn test_page_table() {
+    use crate::allocator::frame_allocator::FRAME_ALLOCATOR;
+    use crate::{print, println};
+    use x86_64::structures::paging::{Mapper, FrameAllocator, PageTableFlags, Page};
+    print!("test_page_table... ");
+
+    let frame = FRAME_ALLOCATOR.lock().allocate_frame().unwrap();
+    const ADDR: u64 = 0xABCDE000;
+    map_writable_page(ADDR, frame);
+    
+    let ptr = ADDR as *mut u8;
+    unsafe {
+       *ptr = 42;
+    }
+    let data = unsafe{*ptr};
+    assert_eq!(data, 42);
+
+    unsafe {
+        *ptr = 123;
+    }
+    let data = unsafe{*ptr};
+    assert_eq!(data, 123);
+    
+    println!("[ok]");
 }

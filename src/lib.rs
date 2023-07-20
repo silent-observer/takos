@@ -5,11 +5,15 @@
 #![test_runner(crate::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
+extern crate alloc;
+
+#[cfg(test)]
 use core::panic::PanicInfo;
 
 use allocator::frame_allocator::init_frame_allocator;
 use console::init_writer;
 use display::{FrameBuffer, ColorRGB};
+use gdt::init_gdt;
 use interrupts::init_idt;
 use takobl_api::BootData;
 
@@ -19,14 +23,17 @@ pub mod console;
 pub mod interrupts;
 pub mod allocator;
 pub mod paging;
+mod gdt;
 
 
 pub fn init(boot_data: &BootData) {
+    init_gdt();
+    init_idt();
+
     let frame_buffer = FrameBuffer::new(&boot_data.frame_buffer);
     frame_buffer.fill(ColorRGB::from_hex(0x000000));
     init_writer(frame_buffer);
 
-    init_idt();
     init_frame_allocator(boot_data.free_memory_map.clone());
 }
 
@@ -55,22 +62,16 @@ fn test_runner(tests: &[&dyn Fn()]) {
     for test in tests {
         test();
     }
-    exit_qemu(QemuExitCode::Success);
+    //exit_qemu(QemuExitCode::Success);
 }
 
 /// This function is called on panic.
 #[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    println!("Kernel Panic: {}", info);
+    println!("[failed]");
+    println!("Error: {}", info);
     loop {}
-}
-
-#[test_case]
-fn trivial_assertion() {
-    print!("trivial assertion... ");
-    assert_eq!(1, 1);
-    println!("[ok]");
 }
 
 #[cfg(test)]
