@@ -9,23 +9,23 @@ extern crate alloc;
 use core::arch::asm;
 use core::mem::{size_of, transmute};
 
-use alloc::{fmt, format};
+use alloc::vec::Vec;
+use alloc::format;
 use alloc::{vec, string::String};
 
-use elf::abi::PT_LOAD;
+use elf::abi::{PT_LOAD, PF_X};
 use elf::endian::AnyEndian;
 use log::info;
 use uefi::data_types::PhysicalAddress;
 use uefi::proto::console::gop::GraphicsOutput;
-use uefi::proto::media::fs::SimpleFileSystem;
-use uefi::{fs::Path, table::boot::PAGE_SIZE};
-use uefi::{prelude::*, fs};
+use uefi::fs::{self, Path};
+use uefi::prelude::*;
 use elf::ElfBytes;
-use uefi::table::boot::{AllocateType, MemoryType};
-use takobl_api::{FrameBufferData, BootData};
-use x86_64::{PhysAddr, VirtAddr};
+use uefi::table::boot::MemoryType;
+use takobl_api::{FrameBufferData, BootData, PHYSICAL_MEMORY_OFFSET};
+use x86_64::structures::paging::{PageTable, OffsetPageTable};
 
-use crate::paging::create_page_table;
+use crate::paging::{KERNEL_STACK_END, PageTableBuilder};
 
 #[entry]
 fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
@@ -33,24 +33,27 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     info!("Hello world testing 3!");
     //print_memory_map(&system_table);
     //test_filesystem(image_handle, &system_table);
-    let kernel_entry = load_kernel(image_handle, &system_table);
-    let boot_data = allocate_boot_data(&system_table);
+    let mut page_table_builder = PageTableBuilder::new(system_table.boot_services());
+    page_table_builder.map_physical_mem();
+    page_table_builder.allocate_stack();
+    let boot_data = allocate_boot_data(system_table.boot_services());
+    let kernel_entry = load_kernel(image_handle, system_table.boot_services(), &mut page_table_builder);
 
-    info!("Boot Data ptr: {:?}", boot_data as *mut BootData);
-    info!("Boot Data: {:?}", boot_data);
-    print_memory_map(image_handle, &system_table);
-
-    let (page_tables, kernel_stack_data, free_memory_map) = create_page_table(system_table.boot_services());
-    boot_data.stack_data = kernel_stack_data;
+    // info!("Boot Data ptr: {:?}", boot_data as *mut BootData);
+    // info!("Boot Data: {:?}", boot_data);
+    // print_memory_map(image_handle, &system_table);
+    let (mut page_table, free_memory_map, loader_code) = page_table_builder.deconstruct();
     boot_data.free_memory_map = free_memory_map;
     boot_data.frame_buffer = get_gop_data(system_table.boot_services());
-    info!("Loading page table {:08X}!", page_tables);
+    boot_data.loader_code = loader_code;
+    info!("Loading page table {:08X}!", page_table.level_4_table() as *mut PageTable as u64);
+    info!("Page table {:?}", page_table.level_4_table()[0]);
     //let rip = x86_64::registers::read_rip();
     //info!("Rip: {:016X}", rip);
     //system_table.boot_services().stall(10_000_000);
     let _ = system_table.exit_boot_services();
     //info!("Success!", "{}");
-    jump_to(kernel_entry, boot_data, page_tables);
+    jump_to(kernel_entry, convert_boot_data(boot_data), &mut page_table);
 }
 
 #[allow(dead_code)]
@@ -63,8 +66,8 @@ fn test_filesystem(image_handle: Handle, system_table: &SystemTable<Boot>) {
     info!("File contents: {}", s);
 }
 
-fn load_kernel(image_handle: Handle, system_table: &SystemTable<Boot>)-> PhysicalAddress {
-    let mut fs = system_table.boot_services().get_image_file_system(image_handle)
+fn load_kernel(image_handle: Handle, bs: &BootServices, page_table_builder: &mut PageTableBuilder)-> PhysicalAddress {
+    let mut fs: fs::FileSystem<'_> = bs.get_image_file_system(image_handle)
         .expect("Couldn't get filesystem");
     let path = Path::new(cstr16!("kernel.elf"));
     let data = fs.read(path).expect("Couldn't read file");
@@ -72,57 +75,63 @@ fn load_kernel(image_handle: Handle, system_table: &SystemTable<Boot>)-> Physica
         .expect("Couldn't parse elf");
     let segments = elf.segments().expect("Couldn't get segments");
 
-    let mut page_start_index = None;
-    let mut page_end_index = None;
-    for segment in segments {
-        if segment.p_type != PT_LOAD { continue; }
-        let segment_start = segment.p_paddr;
-        let segment_end = segment.p_paddr + segment.p_memsz;
-        let segment_start_index = segment_start / PAGE_SIZE as u64;
-        let segment_end_index = (segment_end + (PAGE_SIZE - 1) as u64) / PAGE_SIZE as u64;
-        match page_start_index {
-            Some(p) if segment_start_index < p => page_start_index = Some(segment_start_index),
-            Some(_) => {}
-            None => page_start_index = Some(segment_start_index),
-        }
-        match page_end_index {
-            Some(p) if segment_end_index > p => page_end_index = Some(segment_end_index),
-            Some(_) => {}
-            None => page_end_index = Some(segment_end_index),
-        }
-    }
-
-    let start_address = page_start_index.unwrap() * PAGE_SIZE as u64;
-    let page_count = (page_end_index.unwrap() - page_start_index.unwrap()) as usize;
-    system_table.boot_services()
-        .allocate_pages(
-            AllocateType::Address(start_address), 
-            MemoryType::LOADER_DATA, 
-            page_count)
-        .expect("Couldn't allocate memory");
+    let mut allocated_pages: Vec<(u64, u64)> = Vec::new();
 
     for segment in segments {
         if segment.p_type != PT_LOAD { continue; }
         let file_size = segment.p_filesz as usize;
         let mem_size = segment.p_memsz as usize;
-        let physical_address = segment.p_paddr;
-        info!("Address: 0x{:08X}, size: 0x{:X}", physical_address, mem_size);
+        let start_virt_address = segment.p_vaddr;
+        let end_virt_address = segment.p_vaddr + segment.p_memsz;
+        info!("Address: {:016X}-{:016X}, size: 0x{:X}", start_virt_address, end_virt_address, mem_size);
         let data = elf.segment_data(&segment).expect("Couldn't get segment data");
-        unsafe {
-            let dest = physical_address as *mut u8;
-            let src = data.as_ptr();
-            system_table.boot_services().memmove(dest, src, file_size);
-            if mem_size > file_size {
-                system_table.boot_services().set_mem(dest.offset(file_size as isize), mem_size - file_size, 0u8);
+
+        let is_executable = segment.p_flags & PF_X != 0;
+        
+        let mut page_address = segment.p_vaddr & !0xFFF;
+        let mut memory_offset = segment.p_vaddr & 0xFFF;
+        let mut data_offset: usize = 0;
+        while data_offset < mem_size {
+            info!("data_offset: {:X}", data_offset);
+            info!("page_address: {:X}", page_address);
+            info!("memory_offset: {:X}", memory_offset);
+            let data_left = if data_offset < file_size {file_size - data_offset} else {0x1000};
+            let size = (0x1000 - memory_offset as usize).min(data_left);
+            let physical_address = allocated_pages
+                .iter()
+                .find(|(virt, _)| *virt == page_address)
+                .map(|(_, phys)| *phys)
+                .unwrap_or_else(|| {
+                    let new_page = page_table_builder.allocate_page(page_address, is_executable);
+                    allocated_pages.push((page_address, new_page));
+                    new_page
+                });
+            unsafe {
+                let dest = (physical_address as *mut u8).add(memory_offset as usize);
+                if data_offset < file_size {
+                    let src = data.as_ptr().add(data_offset);
+                    bs.memmove(dest, src, size);
+                } else {
+                    bs.set_mem(dest, size, 0u8);
+                }
+            }
+
+            memory_offset += size as u64;
+            data_offset += size;
+            if memory_offset >= 0x1000 {
+                page_address += 0x1000;
+                memory_offset -= 0x1000;
             }
         }
+        info!("Success!");
     }
+    info!("Kernel loading into memory... OK!");
     elf.ehdr.e_entry
 }
 
-fn jump_to(addr: PhysicalAddress, boot_data: &'static mut BootData, page_tables: PhysAddr) -> ! {
-    let cr3 = page_tables.as_u64();
-    let stack_ptr = VirtAddr::new(boot_data.stack_data.stack_end).align_down(16u64).as_u64();
+fn jump_to(addr: PhysicalAddress, boot_data: &'static mut BootData, page_table: &mut OffsetPageTable<'static>) -> ! {
+    let cr3 = page_table.level_4_table() as *mut PageTable as u64;
+    let stack_ptr = KERNEL_STACK_END;
     unsafe {
         asm!(
             "mov cr3, {}; mov rsp, {}; push 0; jmp {}",
@@ -159,15 +168,23 @@ fn get_gop_data(bt: &BootServices) -> FrameBufferData {
     result
 }
 
-fn allocate_boot_data(system_table: &SystemTable<Boot>) -> &'static mut BootData {
+fn allocate_boot_data(bs: &BootServices) -> &'static mut BootData {
     let size = size_of::<BootData>();
-    let boot_data = system_table.boot_services()
+    let boot_data = bs
         .allocate_pool(MemoryType::LOADER_DATA, size)
         .expect("Couldn't allocate memory");
     unsafe {
         let boot_data: *mut BootData = transmute(boot_data);
         core::ptr::write(boot_data, BootData::new());
         boot_data.as_mut().unwrap()
+    }
+}
+
+fn convert_boot_data(boot_data: &'static mut BootData) -> &'static mut BootData {
+    unsafe {
+        let addr = boot_data as *mut BootData as *mut u8;
+        let addr = addr.add(PHYSICAL_MEMORY_OFFSET as usize) as *mut BootData;
+        addr.as_mut().unwrap()
     }
 }
 

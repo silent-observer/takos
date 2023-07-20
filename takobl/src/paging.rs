@@ -1,239 +1,47 @@
-use alloc::vec;
+use alloc::vec::Vec;
 use log::info;
-use takobl_api::{PHYSICAL_MEMORY_OFFSET, KernelStackData, FreeMemoryMap, FreeMemoryRegion};
-use uefi::{table::boot::{MemoryMap, PAGE_SIZE, MemoryType, AllocateType}, prelude::BootServices};
-use x86_64::{PhysAddr, structures::paging::{PageTableFlags, PageTable}};
+use takobl_api::{PHYSICAL_MEMORY_OFFSET, FreeMemoryMap, MemoryRegion};
+use uefi::{prelude::BootServices, table::boot::{MemoryType, AllocateType, MemoryMap}};
+use x86_64::{PhysAddr, VirtAddr, structures::paging::{PageTableFlags, Page, Size1GiB}};
+use x86_64::structures::paging::{FrameAllocator, Size4KiB, PhysFrame, PageTable, OffsetPageTable, Mapper};
 
-struct PageTableBuilder {
-    count1: u16,
-    count2: u16,
-    count3: u16,
 
-    prev_address: Option<u64>,
-    allocated_tables: u64,
-    memory_size: u64,
+struct UefiFrameAllocator<'a> {
+    bs: &'a BootServices,
+    free_memory_map: FreeMemoryMap,
 }
 
-const KERNEL_STACK_SIZE: usize = 5;
-const KERNEL_STACK_END: u64 = 0x100_0000_0000;
-const KERNEL_STACK_START: u64 = KERNEL_STACK_END - (KERNEL_STACK_SIZE * PAGE_SIZE) as u64;
-const KERNEL_STACK_GUARD_PAGE: u64 = KERNEL_STACK_START - PAGE_SIZE as u64;
-
-impl PageTableBuilder {
-    fn new() -> Self {
-        PageTableBuilder {
-            count1: 0,
-            count2: 0,
-            count3: 0,
-
-            prev_address: None,
-            allocated_tables: 1,
-            memory_size: 0,
-        }
+impl<'a> UefiFrameAllocator<'a> {
+    fn new(bs: &'a BootServices, memory_map: &MemoryMap<'_>) -> Self {
+        let free_memory_map = create_free_memory_map(memory_map);
+        Self { bs, free_memory_map }
     }
 
-    // Only works if pages are sorted!
-    fn count_page(&mut self, virtual_address: u64, huge_page: bool) {
-        if let Some(prev_address) = self.prev_address {
-            assert!(prev_address <= virtual_address, "Pages must be counted in a sorted order!");
-            let diff = virtual_address ^ prev_address;
-            if diff & 0xFF80_0000_0000 != 0 {
-                if !huge_page {
-                    self.count1 += 1;
-                    self.count2 += 1;
-                    //info!("+2 for {:016X}", virtual_address);
-                } else {
-                    //info!("+1 for {:016X}", virtual_address);
-                }
-                self.count3 += 1;
-            } else if diff & 0x007F_C000_0000 != 0 {
-                if !huge_page {
-                    self.count1 += 1;
-                    self.count2 += 1;
-                    //info!("+2 for {:016X}", virtual_address);
-                }
-            } else if diff & 0x0000_3FE0_0000 != 0 {
-                self.count1 += 1;
-                //info!("+1 for {:016X}", virtual_address);
-            }
-        } else {
-            self.count1 += 1;
-            self.count2 += 1;
-            self.count3 += 1;
-            //info!("+3 for {:016X}", virtual_address);
-        }
-        self.prev_address = Some(virtual_address);
-    }
-    
-    fn count_span(&mut self, start_address: u64, page_count: u64) {
-        for i in 0..page_count {
-            self.count_page(start_address + i * PAGE_SIZE as u64, false);
-        }
+    fn register(&mut self, start_addr: u64, pages: u64) {
+        self.free_memory_map.remove(&MemoryRegion { start: start_addr, pages });
     }
 
-    // Map must be sorted!
-    fn count(&mut self, map: &MemoryMap) {
-        // Identity map all the pages in the memory map
-        for entry in map.entries() {
-            match entry.ty {
-                MemoryType::LOADER_CODE |
-                MemoryType::LOADER_DATA |
-                MemoryType::RUNTIME_SERVICES_CODE |
-                MemoryType::RUNTIME_SERVICES_DATA |
-                // MemoryType::BOOT_SERVICES_CODE |
-                // MemoryType::BOOT_SERVICES_DATA |
-                MemoryType::ACPI_NON_VOLATILE |
-                MemoryType::PAL_CODE => {
-                    self.count_span(entry.phys_start, entry.page_count);
-                    self.memory_size = entry.phys_start + entry.page_count * PAGE_SIZE as u64;
-                }
-                MemoryType::RESERVED => {}
-                _ => {
-                    self.memory_size = entry.phys_start + entry.page_count * PAGE_SIZE as u64;
-                }
-            }
-        }
-
-        // Map kernel stack
-        self.count_span(KERNEL_STACK_GUARD_PAGE, KERNEL_STACK_SIZE as u64 + 1);
-
-        // Map all physical memory at PHYSICAL_MEMORY_OFFSET
-        let total_pages = self.memory_size / PAGE_SIZE as u64;
-        let huge_pages = (total_pages + 512 * 512 - 1) / (512 * 512);
-        const HUGE_PAGE_SIZE: u64 = 4096 * 512 * 512;
-        for i in 0..huge_pages {
-            self.count_page(PHYSICAL_MEMORY_OFFSET + i * HUGE_PAGE_SIZE, true);
-        }
-    }
-
-    fn get_or_create_table(&mut self, base_addr: u64, table_addr: u64, index: usize, new_flags: PageTableFlags) -> u64 {
-
-        let table = unsafe {(table_addr as *mut PageTable).as_mut().unwrap()};
-        if table[index].is_unused() {
-            let new_table_addr = base_addr + self.allocated_tables * PAGE_SIZE as u64;
-            if !PhysAddr::new(new_table_addr).is_aligned(4096u64) {
-                //info!("{:08X}", new_table_addr);
-            }
-            assert!(PhysAddr::new(new_table_addr).is_aligned(4096u64));
-            table[index].set_addr(PhysAddr::new(new_table_addr), new_flags);
-            //info!("Base {:08X}", base_addr);
-            //info!("Allocated table {} for {:08X}", self.allocated_tables, table_addr);
-            self.allocated_tables += 1;
-        }
-        
-        table[index].addr().as_u64()
-    }
-
-    fn set_page(&mut self, physical_address: u64, virtual_address: u64, flags: PageTableFlags, tables_addr: u64) {
-        let p4_index = (virtual_address >> 39) & 0x1FF;
-        let p3_index = (virtual_address >> 30) & 0x1FF;
-        let p2_index = (virtual_address >> 21) & 0x1FF;
-        let p1_index = (virtual_address >> 12) & 0x1FF;
-
-        let p4_flags = flags.difference(PageTableFlags::HUGE_PAGE);
-        let p3_table = self.get_or_create_table(tables_addr, tables_addr, p4_index as usize, p4_flags);
-        let (final_table, index) = if flags.contains(PageTableFlags::HUGE_PAGE) {
-            (p3_table, p3_index)
-        } else {
-            let p2_table = self.get_or_create_table(tables_addr, p3_table, p3_index as usize, flags);
-            let p1_table = self.get_or_create_table(tables_addr, p2_table, p2_index as usize, flags);
-            (p1_table, p1_index)
-        };
-        let table = unsafe {(final_table as *mut PageTable).as_mut().unwrap()};
-        assert!(PhysAddr::new(physical_address).is_aligned(4096u64));
-        //info!("Set addr: {:08X}", physical_address);
-        table[index as usize].set_addr(PhysAddr::new(physical_address), flags);
-    }
-
-    fn set_span(&mut self, physical_address: u64, virtual_address: u64, page_count: u64, flags: PageTableFlags, tables_addr: u64) {
-        for i in 0..page_count {
-            self.set_page(physical_address + i * PAGE_SIZE as u64, virtual_address + i * PAGE_SIZE as u64, flags, tables_addr);
-        }
-    }
-
-    fn allocate(&mut self, map: &MemoryMap, bs: &BootServices, stack_start: u64) -> PhysAddr {
-        let total_table_count = self.count1 + self.count2 + self.count3 + 1;
-        info!("Total page tables: {}", total_table_count);
-        // Identity map all the pages in the memory map
-        let addr = bs.allocate_pages(AllocateType::AnyPages, 
-                MemoryType::LOADER_DATA, 
-                total_table_count as usize)
-            .expect("Failed to allocate pages");
-        unsafe {
-            core::ptr::write_bytes(addr as *mut u8, 0, total_table_count as usize * PAGE_SIZE);
-        }
-
-        const IDENTITY_MAP_FLAGS: PageTableFlags = PageTableFlags::PRESENT.union(PageTableFlags::WRITABLE);
-        for entry in map.entries() {
-            match entry.ty {
-                MemoryType::LOADER_CODE |
-                MemoryType::LOADER_DATA |
-                MemoryType::RUNTIME_SERVICES_CODE |
-                MemoryType::RUNTIME_SERVICES_DATA |
-                // MemoryType::BOOT_SERVICES_CODE |
-                // MemoryType::BOOT_SERVICES_DATA |
-                MemoryType::ACPI_NON_VOLATILE |
-                MemoryType::PAL_CODE =>
-                    self.set_span(entry.phys_start,
-                        entry.phys_start,
-                        entry.page_count,
-                        IDENTITY_MAP_FLAGS, 
-                        addr),
-                _ => {}
-            }
-            
-        }
-
-        const STACK_FLAGS: PageTableFlags = PageTableFlags::PRESENT
-            .union(PageTableFlags::WRITABLE)
-            .union(PageTableFlags::NO_EXECUTE);
-
-        // Map kernel stack
-        self.set_span(stack_start,
-            KERNEL_STACK_START,
-            KERNEL_STACK_SIZE as u64,
-            STACK_FLAGS,
-            addr);
-
-        // Map all physical memory at PHYSICAL_MEMORY_OFFSET
-        let total_pages = self.memory_size / PAGE_SIZE as u64;
-        let huge_pages = (total_pages + 512 * 512 - 1) / (512 * 512);
-        const HUGE_PAGE_FLAGS: PageTableFlags = PageTableFlags::PRESENT
-            .union(PageTableFlags::WRITABLE)
-            .union(PageTableFlags::NO_EXECUTE)
-            .union(PageTableFlags::HUGE_PAGE);
-        const HUGE_PAGE_SIZE: u64 = 4096 * 512 * 512;
-        for i in 0..huge_pages {
-            let physical_address = i * HUGE_PAGE_SIZE;
-            let virtual_address = PHYSICAL_MEMORY_OFFSET + physical_address;
-            //info!("{:08X} -> {:08X}", virtual_address, physical_address);
-            self.set_page(physical_address, virtual_address, HUGE_PAGE_FLAGS, addr);
-        }
-
-        // for i in [0, 1, 2, 5, 6] {
-        //     let ptr = (addr + i * PAGE_SIZE as u64) as *mut PageTable;
-        //     let table = unsafe {ptr.as_ref().unwrap()};
-        //     info!("Table {} at {:?}:", i, ptr);
-        //     for j in 0..512 {
-        //         if !table[j].is_unused() {
-        //             info!("    {}: {:08X}, {:?}", j, table[j].addr().as_u64(), table[j].flags());
-        //         }
-        //     }
-        // }
-        info!("Total pages: {}", total_pages);
-        info!("Total huge pages: {}", huge_pages);
-
-        PhysAddr::new(addr)
+    fn allocate(&mut self, pages: u64) -> Option<u64> {
+        let addr = self.bs.allocate_pages(
+            AllocateType::AnyPages, 
+            MemoryType::LOADER_DATA, 
+            1).ok()?;
+        self.register(addr, pages);
+        Some(addr)
     }
 }
 
 fn create_free_memory_map(map: &MemoryMap<'_>) -> FreeMemoryMap {
     let mut result = FreeMemoryMap::new();
-    let mut prev_region: Option<FreeMemoryRegion> = None;
+    let mut prev_region: Option<MemoryRegion> = None;
     for entry in map.entries() {
         match entry.ty {
             MemoryType::BOOT_SERVICES_CODE |
             MemoryType::BOOT_SERVICES_DATA |
+            MemoryType::RUNTIME_SERVICES_CODE |
+            MemoryType::RUNTIME_SERVICES_DATA |
+            MemoryType::LOADER_CODE |
+            MemoryType::LOADER_DATA |
             MemoryType::CONVENTIONAL => {
                 if let Some(ref mut prev) = prev_region {
                     let prev_end = prev.end();
@@ -241,13 +49,13 @@ fn create_free_memory_map(map: &MemoryMap<'_>) -> FreeMemoryMap {
                         prev.pages += entry.page_count;
                     } else{
                         result.add(*prev);
-                        *prev = FreeMemoryRegion {
+                        *prev = MemoryRegion {
                             start: entry.phys_start,
                             pages: entry.page_count
                         }
                     }
                 } else {
-                    prev_region = Some(FreeMemoryRegion {
+                    prev_region = Some(MemoryRegion {
                         start: entry.phys_start,
                         pages: entry.page_count
                     })
@@ -262,33 +70,128 @@ fn create_free_memory_map(map: &MemoryMap<'_>) -> FreeMemoryMap {
     result
 }
 
-pub fn create_page_table(bs: &BootServices) -> (PhysAddr, KernelStackData, FreeMemoryMap) {
+fn get_memory_map<'a>(bs: &BootServices, buffer: &'a mut Vec<u8>) -> MemoryMap<'a> {
     let memory_map_size = bs.memory_map_size();
     info!("Memory map size: {}", memory_map_size.map_size);
     let buffer_size = memory_map_size.map_size + 4 * memory_map_size.entry_size;
-    let mut buffer = vec![0u8; buffer_size];
-    let memory_map = {
-        let mut x = bs.memory_map(&mut buffer)
-            .expect("Couldn't get memory map");
-        x.sort();
-        x
-    };
-
-    let mut free_memory_map = create_free_memory_map(&memory_map);
-
-    let stack_start_physical = bs.allocate_pages(AllocateType::AnyPages, 
-        MemoryType::LOADER_DATA,
-        KERNEL_STACK_SIZE)
-    .expect("Couldn't allocate stack");
-    free_memory_map.remove(&FreeMemoryRegion { start: stack_start_physical, pages: KERNEL_STACK_SIZE as u64});
+    buffer.resize(buffer_size, 0);
     
-    let mut builder = PageTableBuilder::new();
-    builder.count(&memory_map);
-    let page_table = builder.allocate(&memory_map, bs, stack_start_physical);
-    let stack_data = KernelStackData {
-        stack_start: KERNEL_STACK_START,
-        stack_end: KERNEL_STACK_END,
-        guard_page: KERNEL_STACK_GUARD_PAGE,
-    };
-    (page_table, stack_data, free_memory_map)
+    let mut memory_map = bs.memory_map(&mut buffer[..])
+        .expect("Couldn't get memory map");
+    memory_map.sort();
+    memory_map
+}
+
+unsafe impl<'a> FrameAllocator<Size4KiB> for UefiFrameAllocator<'a> {
+    fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
+        let addr = self.allocate(1)?;
+        PhysFrame::from_start_address(PhysAddr::new(addr)).ok()
+    }
+}
+
+pub const KERNEL_STACK_GUARD_PAGE: u64 = 0xFFFF_FFFF_FFF0_0000;
+pub const KERNEL_STACK_START: u64 = KERNEL_STACK_GUARD_PAGE + 0x1000;
+pub const KERNEL_STACK_END: u64 = 0xFFFF_FFFF_FFFF_FFF0;
+pub const KERNEL_STACK_PAGES: u64 = 0x100;
+
+pub struct PageTableBuilder<'a> {
+    pt: OffsetPageTable<'static>,
+    frame_allocator: UefiFrameAllocator<'a>,
+    loader_code: Option<MemoryRegion>,
+}
+
+impl<'a> PageTableBuilder<'a> {
+    pub fn new(bs: &'a BootServices) -> Self {
+        let page_table_addr = bs.allocate_pages(
+            AllocateType::AnyPages, 
+            MemoryType::LOADER_DATA, 
+            1).unwrap();
+        unsafe {bs.set_mem(page_table_addr as *mut u8, 0x1000, 0u8)};
+        let page_table = unsafe {(page_table_addr as *mut PageTable).as_mut().unwrap()};
+        let pt = unsafe {OffsetPageTable::new(page_table, VirtAddr::new(0))};
+        let mut buffer = Vec::new();
+        let memory_map = get_memory_map(bs, &mut buffer);
+        let frame_allocator = UefiFrameAllocator::new(bs, &memory_map);
+
+        let mut result = PageTableBuilder {
+            pt,
+            frame_allocator,
+            loader_code: None,
+        };
+        result.identity_map_loader_code(&memory_map);
+        info!("Identity map... OK!");
+        result
+    }
+
+    pub fn map_page(&mut self, virtual_addr: u64, physical_addr: u64, flags: PageTableFlags) {
+        let page = Page::<Size4KiB>::from_start_address(VirtAddr::new(virtual_addr)).unwrap();
+        let frame = PhysFrame::from_start_address(PhysAddr::new(physical_addr)).unwrap();
+        unsafe {
+            self.pt.map_to(page, frame, flags, &mut self.frame_allocator).unwrap().ignore()
+        }
+    }
+
+    pub fn map_writeable_page(&mut self, virtual_addr: u64, physical_addr: u64, executable: bool) {
+        let flags = PageTableFlags::PRESENT.union(PageTableFlags::WRITABLE);
+        let flags = if executable {flags} else {flags.union(PageTableFlags::NO_EXECUTE)};
+        self.map_page(virtual_addr, physical_addr, flags);
+    }
+
+    pub fn map_physical_mem(&mut self) {
+        for i in 0..1024 { // 1 TB of physical memory (I wish...)
+            const PAGE_1GB_SIZE: u64 = 1024 * 1024 * 1024;
+            let phys_addr = PhysAddr::new(i * PAGE_1GB_SIZE);
+            let virt_addr = VirtAddr::new(i * PAGE_1GB_SIZE + PHYSICAL_MEMORY_OFFSET);
+            let page = Page::<Size1GiB>::from_start_address(virt_addr).unwrap();
+            let frame = PhysFrame::<Size1GiB>::from_start_address(phys_addr).unwrap();
+            let flags = PageTableFlags::PRESENT.union(PageTableFlags::WRITABLE).union(PageTableFlags::NO_EXECUTE);
+            unsafe {
+                self.pt.map_to(page, frame, flags, &mut self.frame_allocator).unwrap().ignore();
+            }
+        }
+        info!("Offset physical memory map... OK!");
+    }
+
+    pub fn allocate_pages(&mut self, start_virtual_addr: u64, pages: u64, executable: bool) {
+        let addr = self.frame_allocator.allocate(pages).unwrap();
+        for i in 0..pages {
+            let physical_addr = addr + i * 0x1000;
+            let virtual_addr = start_virtual_addr + i * 0x1000;
+            self.map_writeable_page(virtual_addr, physical_addr, executable);
+        }
+    }
+
+    pub fn allocate_page(&mut self, virtual_addr: u64, executable: bool) -> u64 {
+        let addr = self.frame_allocator.allocate(1).unwrap();
+        self.map_writeable_page(virtual_addr, addr, executable);
+        addr
+    }
+
+    pub fn allocate_stack(&mut self) {
+        self.allocate_pages(KERNEL_STACK_START, KERNEL_STACK_PAGES - 1, false);
+        info!("Kernel stack allocation... OK!");
+    }
+
+    fn identity_map_loader_code(&mut self, memory_map: &MemoryMap) {
+        for entry in memory_map.entries() {
+            match entry.ty {
+                MemoryType::LOADER_CODE => {
+                    info!("Identity mapping loader code: {:08X} ({} pages)", entry.phys_start, entry.page_count);
+                    self.loader_code = Some(MemoryRegion {
+                        start: entry.phys_start,
+                        pages: entry.page_count,
+                    });
+                    for page in 0..entry.page_count {
+                        let addr = entry.phys_start + page * 0x1000;
+                        self.map_writeable_page(addr, addr, true);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    pub fn deconstruct(self) -> (OffsetPageTable<'static>, FreeMemoryMap, MemoryRegion) {
+        (self.pt, self.frame_allocator.free_memory_map, self.loader_code.unwrap())
+    }
 }
