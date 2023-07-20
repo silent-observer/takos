@@ -9,7 +9,8 @@ extern crate alloc;
 use alloc::vec;
 use takobl_api::BootData;
 
-use takos::{println, hlt_loop};
+use takos::{println, hlt_loop, allocator::frame_allocator::FRAME_ALLOCATOR, paging::map_writable_page};
+use x86_64::structures::paging::FrameAllocator;
 
 // This function is called on panic.
 #[panic_handler]
@@ -57,6 +58,14 @@ pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
     for region in boot_data.free_memory_map.iter() {
         println!("{:016X}-{:016X}", region.start, region.end());
     }
+
+    // println!("Allocating more memory!");
+    // for i in 0..10000 {
+    //   let frame = FRAME_ALLOCATOR.lock().allocate_frame().expect("Couldn't allocate");
+    //   let addr = 0x4000_1000_0000 + i * 0x1000;
+    //   map_writable_page(addr, frame);
+    // }
+    // println!("Success!");
 
     hlt_loop();
 }

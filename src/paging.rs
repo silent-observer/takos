@@ -3,7 +3,8 @@ use spin::Mutex;
 use takobl_api::PHYSICAL_MEMORY_OFFSET;
 use x86_64::VirtAddr;
 use x86_64::registers::control::Cr3;
-use x86_64::structures::paging::{OffsetPageTable, PageTable, PhysFrame};
+use x86_64::registers::model_specific::Msr;
+use x86_64::structures::paging::{OffsetPageTable, PageTable, PhysFrame, Size4KiB};
 
 lazy_static!{
     pub static ref PAGE_TABLE: Mutex<OffsetPageTable<'static>> = unsafe {
@@ -25,6 +26,13 @@ pub fn map_writable_page(virtual_address: u64, frame: PhysFrame) {
             frame,
             PageTableFlags::PRESENT.union(PageTableFlags::WRITABLE),
             &mut *FRAME_ALLOCATOR.lock()).expect("Failed to map").flush();
+    }
+}
+
+pub fn init_pat() {
+    let mut pat = Msr::new(0x277);
+    unsafe {
+        pat.write(0x00_07_04_06_00_07_01_06);
     }
 }
 

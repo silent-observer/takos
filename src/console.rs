@@ -26,8 +26,8 @@ impl ConsoleWriter {
         }
     }
 
-    pub fn frame_buffer(&self) -> &FrameBuffer {
-        &self.buffer
+    pub fn frame_buffer(&mut self) -> &mut FrameBuffer {
+        &mut self.buffer
     }
 
     fn write_newline(&mut self) {
@@ -37,10 +37,10 @@ impl ConsoleWriter {
 
     fn write_symbol(&mut self, byte: u8) {
         let y = self.height - 1;
-        self.frame_buffer().put_symbol(self.x, y, self.fg_color, self.bg_color, byte);
+        self.buffer.put_symbol(self.x, y, self.fg_color, self.bg_color, byte);
         self.x += 1;
         if self.x >= self.width - 1 {
-            self.frame_buffer().put_symbol(self.x, y, self.fg_color, self.bg_color, 0x10);
+            self.buffer.put_symbol(self.x, y, self.fg_color, self.bg_color, 0x10);
             self.write_newline();
         }
     }

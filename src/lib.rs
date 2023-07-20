@@ -15,6 +15,7 @@ use console::init_writer;
 use display::{FrameBuffer, ColorRGB};
 use gdt::init_gdt;
 use interrupts::init_idt;
+use paging::init_pat;
 use pic::init_pics;
 use takobl_api::BootData;
 
@@ -32,12 +33,13 @@ pub mod keyboard;
 pub fn init(boot_data: &BootData) {
     init_gdt();
     init_idt();
+    init_pat();
+    init_frame_allocator(boot_data.free_memory_map.clone());
 
     let frame_buffer = FrameBuffer::new(&boot_data.frame_buffer);
     frame_buffer.fill(ColorRGB::from_hex(0x000000));
     init_writer(frame_buffer);
 
-    init_frame_allocator(boot_data.free_memory_map.clone());
     init_pics();
     x86_64::instructions::interrupts::enable();
 }
@@ -49,7 +51,7 @@ pub fn hlt_loop() -> ! {
 }
 
 
-#[cfg(any(debug_assertions, test))]
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum QemuExitCode {
@@ -57,7 +59,7 @@ pub enum QemuExitCode {
     Failed = 0x11,
 }
 
-#[cfg(any(debug_assertions, test))]
+#[cfg(test)]
 pub fn exit_qemu(exit_code: QemuExitCode) {
     use x86_64::instructions::port::Port;
 
