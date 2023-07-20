@@ -1,10 +1,10 @@
 use lazy_static::lazy_static;
 use spin::Mutex;
-use takobl_api::PHYSICAL_MEMORY_OFFSET;
+use takobl_api::{PHYSICAL_MEMORY_OFFSET, MemoryRegion};
 use x86_64::VirtAddr;
 use x86_64::registers::control::Cr3;
 use x86_64::registers::model_specific::Msr;
-use x86_64::structures::paging::{OffsetPageTable, PageTable, PhysFrame};
+use x86_64::structures::paging::{OffsetPageTable, PageTable, PhysFrame, Size4KiB};
 
 lazy_static!{
     pub static ref PAGE_TABLE: Mutex<OffsetPageTable<'static>> = unsafe {
@@ -24,8 +24,20 @@ pub fn map_writable_page(virtual_address: u64, frame: PhysFrame) {
         PAGE_TABLE.lock().map_to(
             Page::from_start_address(VirtAddr::new(virtual_address)).unwrap(),
             frame,
-            PageTableFlags::PRESENT.union(PageTableFlags::WRITABLE),
+            PageTableFlags::PRESENT.union(PageTableFlags::WRITABLE).union(PageTableFlags::NO_EXECUTE),
             &mut *FRAME_ALLOCATOR.lock()).expect("Failed to map").flush();
+    }
+}
+
+pub fn unmap_loader_code(loader_code: MemoryRegion) {
+    use x86_64::structures::paging::{Mapper, Page};
+
+    let mut page_table = PAGE_TABLE.lock();
+    for page in 0..loader_code.pages {
+        let addr = loader_code.start + page * 0x1000;
+        page_table.unmap(
+            Page::<Size4KiB>::from_start_address(VirtAddr::new(addr)).unwrap())
+        .expect("Failed to unmap").1.flush();
     }
 }
 

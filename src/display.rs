@@ -37,10 +37,14 @@ impl FrameBuffer {
     pub fn new(data: &FrameBufferData) -> FrameBuffer {
         use x86_64::structures::paging::{Mapper, Page, PageTableFlags};
         let physical_address = data.buffer_addr;
-        const VIRTUAL_ADDRESS: u64 = 0x4000_0000_0000;
-        const VIRTUAL_ADDRESS_DOUBLE: u64 = 0x4000_1000_0000;
+        const VIRTUAL_ADDRESS: u64 = 0xFFFF_F000_0000_0000;
+        const VIRTUAL_ADDRESS_DOUBLE: u64 = 0xFFFF_F000_1000_0000;
         let size = 4 * data.height * data.stride;
         let pages = ((size + 4095) / 4096) as u64;
+        let flags = PageTableFlags::PRESENT
+            .union(PageTableFlags::WRITABLE)
+            .union(PageTableFlags::WRITE_THROUGH)
+            .union(PageTableFlags::NO_EXECUTE);
         for i in 0..pages {
             let virt = VIRTUAL_ADDRESS + i * 4096;
             let phys = physical_address as u64 + i * 4096;
@@ -49,7 +53,7 @@ impl FrameBuffer {
                 PAGE_TABLE.lock().map_to(
                     page,
                     PhysFrame::from_start_address(PhysAddr::new(phys)).unwrap(), 
-                    PageTableFlags::PRESENT.union(PageTableFlags::WRITABLE).union(PageTableFlags::WRITE_THROUGH),
+                    flags,
                     &mut *FRAME_ALLOCATOR.lock()
                 ).unwrap().flush();
             }

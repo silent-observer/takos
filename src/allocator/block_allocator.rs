@@ -12,7 +12,7 @@ use super::frame_allocator::FRAME_ALLOCATOR;
 const BLOCK_SIZES: &[u64] = &[8, 16, 32, 64, 128, 256, 512, 1024, 2048];
 const BLOCK_COUNTS: &[u64] = &[512, 256, 128, 64, 32, 16, 8, 4, 2];
 
-const HEAP_START: u64 = 0xFFFF_AAAA_BBBB_0000;
+const HEAP_START: u64 = 0xFFFF_D000_0000_0000;
 const HEAP_SIZE: u64 = 1024 * 1024;
 const HEAP_END: u64 = HEAP_START + HEAP_SIZE;
 

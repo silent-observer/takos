@@ -15,7 +15,7 @@ use console::init_writer;
 use display::{FrameBuffer, ColorRGB};
 use gdt::init_gdt;
 use interrupts::init_idt;
-use paging::init_pat;
+use paging::{init_pat, unmap_loader_code};
 use pic::init_pics;
 use takobl_api::BootData;
 
@@ -39,6 +39,8 @@ pub fn init(boot_data: &BootData) {
     let frame_buffer = FrameBuffer::new(&boot_data.frame_buffer);
     frame_buffer.fill(ColorRGB::from_hex(0x000000));
     init_writer(frame_buffer);
+
+    unmap_loader_code(boot_data.loader_code);
 
     init_pics();
     x86_64::instructions::interrupts::enable();
