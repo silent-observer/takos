@@ -1,3 +1,4 @@
+#[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum KeyCode {
     Escape = 0x00,
@@ -111,6 +112,7 @@ pub enum KeyCode {
     NumPadPeriod
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum KeyEvent {
     Pressed(KeyCode),
     Released(KeyCode),

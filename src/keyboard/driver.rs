@@ -5,7 +5,7 @@ use crossbeam_queue::ArrayQueue;
 use futures_util::{Stream, task::AtomicWaker, StreamExt};
 use x86_64::instructions::port::Port;
 
-use crate::{println, print};
+use crate::{println, print, keyboard::decoder::keycode_decoder};
 
 use super::commands;
 
@@ -85,7 +85,8 @@ pub async fn keyboard_driver() {
     commands::set_scancode_set(&mut scancodes, 2).await.expect("Couldn't set scancode set");
     let scancode_set = commands::get_scancode_set(&mut scancodes).await.expect("Couldn't get scancode set");
     println!{"Scancode set {}", scancode_set};
-    while let Some(scancode) = scancodes.next().await {
-        print!("{:02X} ", scancode);
-    }
+    keycode_decoder(&mut scancodes).await;
+    // while let Some(scancode) = scancodes.next().await {
+    //     print!("{:02X} ", scancode);
+    // }
 }
