@@ -15,6 +15,7 @@ use console::init_writer;
 use display::{FrameBuffer, ColorRGB};
 use gdt::init_gdt;
 use interrupts::init_idt;
+use pic::init_pics;
 use takobl_api::BootData;
 
 pub mod text;
@@ -24,6 +25,7 @@ pub mod interrupts;
 pub mod allocator;
 pub mod paging;
 mod gdt;
+mod pic;
 
 
 pub fn init(boot_data: &BootData) {
@@ -35,6 +37,8 @@ pub fn init(boot_data: &BootData) {
     init_writer(frame_buffer);
 
     init_frame_allocator(boot_data.free_memory_map.clone());
+    init_pics();
+    x86_64::instructions::interrupts::enable();
 }
 
 
