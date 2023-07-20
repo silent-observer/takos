@@ -9,13 +9,13 @@ extern crate alloc;
 use alloc::vec;
 use takobl_api::BootData;
 
-use takos::println;
+use takos::{println, hlt_loop};
 
 // This function is called on panic.
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     println!("Kernel Panic: {}", info);
-    loop {}
+    hlt_loop();
 }
 
 const CAT: &str = r"
@@ -49,14 +49,14 @@ pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
     //     *(0xdeadbeef as *mut u8) = 42;
     // }
     
-    // println!("Hello world!");
+    println!("Hello world!");
     // println!("This is testing!");
-    // println!("{}", CAT);
+    println!("{}", CAT);
 
-    // println!("Free memory regions:");
-    // for region in boot_data.free_memory_map.iter() {
-    //     println!("{:016X}-{:016X}", region.start, region.end());
-    // }
+    println!("Free memory regions:");
+    for region in boot_data.free_memory_map.iter() {
+        println!("{:016X}-{:016X}", region.start, region.end());
+    }
 
-    loop {}
+    hlt_loop();
 }

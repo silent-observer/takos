@@ -26,6 +26,7 @@ pub mod allocator;
 pub mod paging;
 mod gdt;
 mod pic;
+pub mod keyboard;
 
 
 pub fn init(boot_data: &BootData) {
@@ -39,6 +40,12 @@ pub fn init(boot_data: &BootData) {
     init_frame_allocator(boot_data.free_memory_map.clone());
     init_pics();
     x86_64::instructions::interrupts::enable();
+}
+
+pub fn hlt_loop() -> ! {
+    loop {
+        x86_64::instructions::hlt();
+    }
 }
 
 
@@ -75,7 +82,7 @@ fn test_runner(tests: &[&dyn Fn()]) {
 fn panic(info: &PanicInfo) -> ! {
     println!("[failed]");
     println!("Error: {}", info);
-    loop {}
+    hlt_loop();
 }
 
 #[cfg(test)]
@@ -85,5 +92,5 @@ pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
     println!("Testing!");
     #[cfg(test)]
     test_main();
-    loop{}
+    hlt_loop();
 }

@@ -1,14 +1,15 @@
 use lazy_static::lazy_static;
 
-use x86_64::{structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode}, registers::control::Cr2};
+use x86_64::{structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode}, registers::control::Cr2, instructions::interrupts::without_interrupts};
 
-use crate::{println, pic::{MASTER_PIC_OFFSET, PICS}, print};
+use crate::{println, pic::{MASTER_PIC_OFFSET, PICS}, print, keyboard::KEYBOARD_DRIVER};
 use crate::gdt::DOUBLE_FAULT_IST_INDEX;
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum InterruptIndex {
     Timer = MASTER_PIC_OFFSET,
+    Keyboard,
 }
 
 impl InterruptIndex {
@@ -43,6 +44,11 @@ extern "x86-interrupt" fn timer_handler(_stack_frame: InterruptStackFrame) {
     PICS.lock().notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
 }
 
+extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
+    KEYBOARD_DRIVER.lock().handle_interrupt();
+    PICS.lock().notify_end_of_interrupt(InterruptIndex::Keyboard.as_u8());
+}
+
 lazy_static!{
     static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
@@ -53,6 +59,7 @@ lazy_static!{
         idt.page_fault.set_handler_fn(page_fault_handler);
         idt.general_protection_fault.set_handler_fn(gpf_handler);
         idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_handler);
+        idt[InterruptIndex::Keyboard.as_usize()].set_handler_fn(keyboard_handler);
         idt
     };
 }
