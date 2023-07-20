@@ -1,28 +1,62 @@
-use spin::Mutex;
-use x86_64::instructions::port::Port;
+use core::{pin::Pin, task::{Context, Poll}};
 
-use lazy_static::lazy_static;
+use conquer_once::spin::OnceCell;
+use crossbeam_queue::ArrayQueue;
+use futures_util::{Stream, task::AtomicWaker, StreamExt};
 
-use crate::print;
+use crate::{println, print};
 
-pub struct KeyboardDriver {
-    port: Port<u8>,
+static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
+static WAKER: AtomicWaker = AtomicWaker::new();
+
+pub struct ScancodeStream {
+    _private: (),
 }
 
-impl KeyboardDriver {
-    pub fn new() -> KeyboardDriver {
-        KeyboardDriver {
-            port: Port::new(0x60),
+impl ScancodeStream {
+    pub fn new() -> Self {
+        SCANCODE_QUEUE.try_init_once(|| ArrayQueue::new(100))
+            .expect("Cannot initialize scancode queue twice!");
+        ScancodeStream { _private: () }
+    }
+}
+
+impl Stream for ScancodeStream {
+    type Item = u8;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let queue = SCANCODE_QUEUE.try_get().expect("not initialized");
+        
+        if let Some(scancode) = queue.pop() {
+            return Poll::Ready(Some(scancode));
+        }
+
+        WAKER.register(cx.waker());
+        match queue.pop() {
+            Some(scancode) => {
+                WAKER.take();
+                Poll::Ready(Some(scancode))
+            },
+            None => Poll::Pending,
         }
     }
+}
 
-    #[inline]
-    pub fn handle_interrupt(&mut self) {
-        let scancode = unsafe { self.port.read() };
-        print!("{:02X} ", scancode);
+pub fn add_scancode(scancode: u8) {
+    if let Ok(queue) = SCANCODE_QUEUE.try_get() {
+        if let Ok(_) = queue.push(scancode) {
+            WAKER.wake();
+        } else {
+            println!("WARNING: Scancode queue full!");
+        }
+    } else {
+        println!("WARNING: Scancode queue uninitialized")
     }
 }
 
-lazy_static!{
-    pub static ref KEYBOARD_DRIVER: Mutex<KeyboardDriver> = Mutex::new(KeyboardDriver::new());
+pub async fn keyboard_driver() {
+    let mut scancodes = ScancodeStream::new();
+    while let Some(scancode) = scancodes.next().await {
+        print!("{:02X} ", scancode);
+    }
 }

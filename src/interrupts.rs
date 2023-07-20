@@ -1,9 +1,10 @@
 use lazy_static::lazy_static;
 
+use x86_64::instructions::port::Port;
 use x86_64::registers::control::Cr2;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
-use crate::{println, pic::{MASTER_PIC_OFFSET, PICS}, keyboard::KEYBOARD_DRIVER};
+use crate::{println, pic::{MASTER_PIC_OFFSET, PICS}};
 use crate::gdt::DOUBLE_FAULT_IST_INDEX;
 
 #[derive(Debug, Clone, Copy)]
@@ -46,7 +47,9 @@ extern "x86-interrupt" fn timer_handler(_stack_frame: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
-    KEYBOARD_DRIVER.lock().handle_interrupt();
+    let mut port = Port::<u8>::new(0x60);
+    let scancode = unsafe{port.read()};
+    crate::keyboard::add_scancode(scancode);
     PICS.lock().notify_end_of_interrupt(InterruptIndex::Keyboard.as_u8());
 }
 
