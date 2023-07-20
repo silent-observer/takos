@@ -1,6 +1,8 @@
 #![no_main]
 #![no_std]
 
+mod paging;
+
 extern crate alloc;
 
 use core::arch::asm;
@@ -18,12 +20,14 @@ use uefi::prelude::*;
 use elf::ElfBytes;
 use uefi::table::boot::{AllocateType, MemoryType};
 use takobl_api::{FrameBufferData, BootData};
+use x86_64::{PhysAddr, VirtAddr};
+
+use crate::paging::create_page_table;
 
 #[entry]
 fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     uefi_services::init(&mut system_table).unwrap();
     info!("Hello world testing 3!");
-
     //print_memory_map(&system_table);
     //test_filesystem(image_handle, &system_table);
     let kernel_entry = load_kernel(image_handle, &system_table);
@@ -33,10 +37,18 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     info!("Boot Data ptr: {:?}", boot_data as *mut BootData);
     info!("Boot Data: {:?}", boot_data);
+    print_memory_map(&system_table);
 
-    info!("Jumping!");
+    let (page_tables, kernel_stack_data, free_memory_map) = create_page_table(system_table.boot_services());
+    boot_data.stack_data = kernel_stack_data;
+    boot_data.free_memory_map = free_memory_map;
+    info!("Loading page table {:08X}!", page_tables);
+    //let rip = x86_64::registers::read_rip();
+    //info!("Rip: {:016X}", rip);
+    //system_table.boot_services().stall(10_000_000);
     let _ = system_table.exit_boot_services();
-    jump_to(kernel_entry, boot_data);
+    //info!("Success!", "{}");
+    jump_to(kernel_entry, boot_data, page_tables);
 }
 
 #[allow(dead_code)]
@@ -92,7 +104,7 @@ fn load_kernel(image_handle: Handle, system_table: &SystemTable<Boot>)-> Physica
         let file_size = segment.p_filesz as usize;
         let mem_size = segment.p_memsz as usize;
         let physical_address = segment.p_paddr;
-        info!("Address: {}, size: {}", physical_address, mem_size);
+        info!("Address: {:08X}, size: {}", physical_address, mem_size);
         let data = elf.segment_data(&segment).expect("Couldn't get segment data");
         unsafe {
             let dest = physical_address as *mut u8;
@@ -106,10 +118,14 @@ fn load_kernel(image_handle: Handle, system_table: &SystemTable<Boot>)-> Physica
     elf.ehdr.e_entry
 }
 
-fn jump_to(addr: PhysicalAddress, boot_data: &'static mut BootData) -> ! {
+fn jump_to(addr: PhysicalAddress, boot_data: &'static mut BootData, page_tables: PhysAddr) -> ! {
+    let cr3 = page_tables.as_u64();
+    let stack_ptr = VirtAddr::new(boot_data.stack_data.stack_end).align_down(16u64).as_u64();
     unsafe {
         asm!(
-            "push 0; jmp {}",
+            "mov cr3, {}; mov rsp, {}; push 0; jmp {}",
+            in(reg) cr3,
+            in(reg) stack_ptr,
             in(reg) addr,
             in("rdi") boot_data as *const _ as usize,
         );
@@ -166,8 +182,8 @@ fn print_memory_map(system_table: &SystemTable<Boot>) {
         x
     };
 
-    for (i, entry) in memory_map.entries().enumerate() {
-        info!("{}: {:?}", i, entry);
-        system_table.boot_services().stall(1_000_000);
+    for entry in memory_map.entries() {
+        info!("{:?}: {:?}", entry.phys_start as *mut u8, entry);
+        //system_table.boot_services().stall(100_000);
     }
 }

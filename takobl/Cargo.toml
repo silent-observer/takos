@@ -9,6 +9,7 @@ edition = "2021"
 log = "0.4.19"
 uefi-services = "0.21.0"
 takobl_api = { path = "../takobl_api" }
+x86_64 = "0.14.10"
 
 [dependencies.uefi]
 version = "0.24.0"
