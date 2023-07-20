@@ -1,19 +1,17 @@
 #![no_std]
 #![no_main]
+#![feature(abi_x86_interrupt)]
 
-mod text;
-pub mod display;
-mod console;
+use core::panic::PanicInfo;
 
-use core::{panic::PanicInfo, fmt::Write};
-
-use console::{init_writer, WRITER};
-use display::{FrameBuffer, ColorRGB};
 use takobl_api::BootData;
+
+use takos::println;
 
 /// This function is called on panic.
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
+    println!("Kernel Panic: {}", info);
     loop {}
 }
 
@@ -42,13 +40,20 @@ const CAT: &str = r"
 
 #[export_name = "_start"]
 pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
-    let frame_buffer = FrameBuffer::new(&boot_data.frame_buffer);
-    frame_buffer.fill(ColorRGB::from_hex(0x000000));
-    init_writer(frame_buffer);
+    takos::init(boot_data);
+
+    // unsafe {
+    //     *(0xdeadbeef as *mut u8) = 42;
+    // }
     
     println!("Hello world!");
     println!("This is testing!");
     println!("{}", CAT);
+
+    println!("Free memory regions:");
+    for region in boot_data.free_memory_map.iter() {
+        println!("{:016X}-{:016X}", region.start, region.end());
+    }
 
     loop {}
 }

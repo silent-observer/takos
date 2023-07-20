@@ -5,6 +5,8 @@ use core::ptr::null_mut;
 
 use takobl_api::FrameBufferData;
 
+const PHYSICAL_MEMORY_OFFSET: usize = 32 * 1024 * 1024 * 1024 * 1024;
+
 #[derive(Debug)]
 pub struct FrameBuffer {
     base_addr: *mut u8,
@@ -27,7 +29,7 @@ impl FrameBuffer {
 
     pub fn new(data: &FrameBufferData) -> FrameBuffer {
         FrameBuffer {
-            base_addr: data.buffer_addr,
+            base_addr: unsafe{data.buffer_addr.add(PHYSICAL_MEMORY_OFFSET as usize)},
             width: data.width,
             height: data.height,
             stride: data.stride,
