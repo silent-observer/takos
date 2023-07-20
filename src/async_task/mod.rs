@@ -5,7 +5,7 @@ use futures_util::Future;
 
 pub mod executor;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 struct TaskId(u64);
 
 impl TaskId {

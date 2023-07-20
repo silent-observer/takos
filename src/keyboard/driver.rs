@@ -1,7 +1,7 @@
-use core::{pin::Pin, task::{Context, Poll}};
+use core::{pin::Pin, task::{Context, Poll}, sync::atomic::{AtomicBool, Ordering}};
 
 use conquer_once::spin::OnceCell;
-use crossbeam_queue::ArrayQueue;
+use thingbuf::StaticThingBuf;
 use futures_util::{Stream, task::AtomicWaker, StreamExt};
 use x86_64::instructions::port::Port;
 
@@ -9,17 +9,17 @@ use crate::{println, print, keyboard::decoder::keycode_decoder};
 
 use super::commands;
 
-static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
+static SCANCODE_QUEUE: StaticThingBuf<u8, 100> = StaticThingBuf::new();
 static WAKER: AtomicWaker = AtomicWaker::new();
-
 pub struct ScancodeStream {
     _private: (),
 }
 
 impl ScancodeStream {
     pub fn new() -> Self {
-        SCANCODE_QUEUE.try_init_once(|| ArrayQueue::new(100))
-            .expect("Cannot initialize scancode queue twice!");
+        static SCANCODE_STREAM_TAKEN: AtomicBool = AtomicBool::new(false);
+        let prev = SCANCODE_STREAM_TAKEN.swap(true, Ordering::Relaxed);
+        assert!(!prev);
         ScancodeStream { _private: () }
     }
 }
@@ -28,14 +28,12 @@ impl Stream for ScancodeStream {
     type Item = u8;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let queue = SCANCODE_QUEUE.try_get().expect("not initialized");
-        
-        if let Some(scancode) = queue.pop() {
+        if let Some(scancode) = SCANCODE_QUEUE.pop() {
             return Poll::Ready(Some(scancode));
         }
 
         WAKER.register(cx.waker());
-        match queue.pop() {
+        match SCANCODE_QUEUE.pop() {
             Some(scancode) => {
                 WAKER.take();
                 Poll::Ready(Some(scancode))
@@ -46,14 +44,10 @@ impl Stream for ScancodeStream {
 }
 
 pub fn add_scancode(scancode: u8) {
-    if let Ok(queue) = SCANCODE_QUEUE.try_get() {
-        if let Ok(_) = queue.push(scancode) {
-            WAKER.wake();
-        } else {
-            println!("WARNING: Scancode queue full!");
-        }
+    if let Ok(_) = SCANCODE_QUEUE.push(scancode) {
+        WAKER.wake();
     } else {
-        println!("WARNING: Scancode queue uninitialized")
+        println!("WARNING: Scancode queue full!");
     }
 }
 

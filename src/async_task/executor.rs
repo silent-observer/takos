@@ -1,17 +1,19 @@
 use core::task::{Waker, Context, Poll};
 
 use alloc::{collections::BTreeMap, sync::Arc, task::Wake};
-use crossbeam_queue::ArrayQueue;
+use thingbuf::StaticThingBuf;
 
 use super::{TaskId, Task};
 
+const QUEUE_CAPACITY: usize = 100;
+
 struct TaskWaker {
     task_id: TaskId,
-    task_queue: Arc<ArrayQueue<TaskId>>,
+    task_queue: Arc<StaticThingBuf<TaskId, QUEUE_CAPACITY>>,
 }
 
 impl TaskWaker {
-    fn new(task_id: TaskId, task_queue: Arc<ArrayQueue<TaskId>>) -> Waker {
+    fn new(task_id: TaskId, task_queue: Arc<StaticThingBuf<TaskId, QUEUE_CAPACITY>>) -> Waker {
         Waker::from(Arc::new(Self {
             task_id,
             task_queue,
@@ -34,7 +36,7 @@ impl Wake for TaskWaker {
 
 pub struct Executor {
     tasks: BTreeMap<TaskId, Task>,
-    task_queue: Arc<ArrayQueue<TaskId>>,
+    task_queue: Arc<StaticThingBuf<TaskId, QUEUE_CAPACITY>>,
     waker_cache: BTreeMap<TaskId, Waker>,
 }
 
@@ -42,7 +44,7 @@ impl Executor {
     pub fn new() -> Self {
         Self {
             tasks: BTreeMap::new(),
-            task_queue: Arc::new(ArrayQueue::new(100)),
+            task_queue: Arc::new(StaticThingBuf::new()),
             waker_cache: BTreeMap::new(),
         }
     }
