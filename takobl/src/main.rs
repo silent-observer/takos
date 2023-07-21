@@ -1,6 +1,7 @@
 #![no_main]
 #![no_std]
 #![feature(ascii_char)]
+#![feature(pointer_byte_offsets)]
 
 mod paging;
 
@@ -9,6 +10,7 @@ extern crate alloc;
 use core::arch::asm;
 use core::mem::{size_of, transmute};
 
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::format;
 use alloc::{vec, string::String};
@@ -21,6 +23,9 @@ use uefi::proto::console::gop::GraphicsOutput;
 use uefi::fs::{self, Path};
 use uefi::prelude::*;
 use elf::ElfBytes;
+use uefi::proto::device_path::DevicePath;
+use uefi::proto::device_path::text::{DisplayOnly, AllowShortcuts};
+use uefi::proto::loaded_image::LoadedImage;
 use uefi::table::boot::MemoryType;
 use takobl_api::{FrameBufferData, BootData, PHYSICAL_MEMORY_OFFSET};
 use x86_64::structures::paging::{PageTable, OffsetPageTable};
@@ -39,6 +44,8 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     let boot_data = allocate_boot_data(system_table.boot_services());
     let kernel_entry = load_kernel(image_handle, system_table.boot_services(), &mut page_table_builder);
 
+    let device_path = get_storage_device_path(image_handle, system_table.boot_services());
+
     // info!("Boot Data ptr: {:?}", boot_data as *mut BootData);
     // info!("Boot Data: {:?}", boot_data);
     // print_memory_map(image_handle, &system_table);
@@ -46,6 +53,7 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     boot_data.free_memory_map = free_memory_map;
     boot_data.frame_buffer = get_gop_data(system_table.boot_services());
     boot_data.loader_code = loader_code;
+    boot_data.image_device_path = convert_to_physical(device_path.leak());
     info!("Loading page table {:08X}!", page_table.level_4_table() as *mut PageTable as u64);
     info!("Page table {:?}", page_table.level_4_table()[0]);
     //let rip = x86_64::registers::read_rip();
@@ -53,7 +61,7 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     //system_table.boot_services().stall(10_000_000);
     let _ = system_table.exit_boot_services();
     //info!("Success!", "{}");
-    jump_to(kernel_entry, convert_boot_data(boot_data), &mut page_table);
+    jump_to(kernel_entry, convert_to_physical(boot_data), &mut page_table);
 }
 
 #[allow(dead_code)]
@@ -144,6 +152,15 @@ fn jump_to(addr: PhysicalAddress, boot_data: &'static mut BootData, page_table: 
     unreachable!();
 }
 
+fn get_storage_device_path(image_handle: Handle, bs: &BootServices) -> String {
+    let image = bs.open_protocol_exclusive::<LoadedImage>(image_handle).expect("Couldn't open image protocol");
+    let device_path = bs.open_protocol_exclusive::<DevicePath>(image.device()).expect("Couldn't open device protocol");
+    let s = device_path.to_string(bs, DisplayOnly(false), AllowShortcuts(false)).expect("Couldn't convert to string").unwrap();
+    let s = s.to_string();
+    info!("{}", s);
+    s
+}
+
 fn get_gop_data(bt: &BootServices) -> FrameBufferData {
     info!("Getting handle");
     let handle = bt.get_handle_for_protocol::<GraphicsOutput>().expect("Couldn't get handle");
@@ -180,10 +197,10 @@ fn allocate_boot_data(bs: &BootServices) -> &'static mut BootData {
     }
 }
 
-fn convert_boot_data(boot_data: &'static mut BootData) -> &'static mut BootData {
+fn convert_to_physical<T: ?Sized>(boot_data: &'static mut T) -> &'static mut T {
     unsafe {
-        let addr = boot_data as *mut BootData as *mut u8;
-        let addr = addr.add(PHYSICAL_MEMORY_OFFSET as usize) as *mut BootData;
+        let addr = boot_data as *mut T;
+        let addr = addr.byte_add(PHYSICAL_MEMORY_OFFSET as usize);
         addr.as_mut().unwrap()
     }
 }

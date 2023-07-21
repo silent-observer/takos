@@ -10,6 +10,7 @@ extern crate alloc;
 #[cfg(test)]
 use core::panic::PanicInfo;
 
+use alloc::string::ToString;
 use allocator::frame_allocator::init_frame_allocator;
 use console::init_writer;
 use display::{FrameBuffer, ColorRGB};
@@ -18,6 +19,8 @@ use interrupts::init_idt;
 use paging::{init_pat, unmap_loader_code};
 use pic::init_pics;
 use takobl_api::BootData;
+
+use crate::pci::init_pci;
 
 pub mod text;
 pub mod display;
@@ -29,6 +32,7 @@ mod gdt;
 mod pic;
 pub mod keyboard;
 pub mod async_task;
+mod pci;
 
 pub fn init(boot_data: &BootData) {
     init_gdt();
@@ -40,10 +44,15 @@ pub fn init(boot_data: &BootData) {
     frame_buffer.fill(ColorRGB::from_hex(0x000000));
     init_writer(frame_buffer);
 
+    let image_device_path = boot_data.image_device_path.to_string();
+
     unmap_loader_code(boot_data.loader_code);
 
     init_pics();
     x86_64::instructions::interrupts::enable();
+
+    println!("Image device path: {}", image_device_path);
+    init_pci();
 }
 
 pub fn hlt_loop() -> ! {

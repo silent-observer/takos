@@ -56,15 +56,16 @@ async fn print_keyboard_events(receiver: Receiver<KeyboardEvent>) {
 
 #[export_name = "_start"]
 pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
-    takos::init(boot_data);
+    let mut boot_data_cloned = boot_data.clone();
+    takos::init(&mut boot_data_cloned);
 
     // unsafe {
     //     *(0xdeadbeef as *mut u8) = 42;
     // }
     
-    println!("Hello world!");
+    // println!("Hello world!");
     // println!("This is testing!");
-    println!("{}", CAT);
+    // println!("{}", CAT);
 
     println!("Free memory regions:");
     for region in boot_data.free_memory_map.iter() {

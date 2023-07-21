@@ -4,7 +4,7 @@
 const PAGE_SIZE: u64 = 4096;
 const MAX_FREE_MEMORY: usize = 63;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FrameBufferData {
     pub buffer_addr: *mut u8,
     pub width: usize,
@@ -12,11 +12,12 @@ pub struct FrameBufferData {
     pub stride: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BootData {
     pub frame_buffer: FrameBufferData,
     pub free_memory_map: FreeMemoryMap,
     pub loader_code: MemoryRegion,
+    pub image_device_path: &'static str,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -61,6 +62,7 @@ impl BootData {
             frame_buffer: FrameBufferData::new(),
             free_memory_map: FreeMemoryMap::new(),
             loader_code: MemoryRegion { start: 0, pages: 0 },
+            image_device_path: "",
         }
     }
 }
