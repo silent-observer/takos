@@ -8,7 +8,7 @@ qemu-system-x86_64 -m 4G -s \
     -cpu host \
     -drive if=pflash,format=raw,readonly=on,file=/usr/share/qemu/ovmf-x86_64.bin \
     -drive if=pflash,format=raw,readonly=on,file=/usr/share/qemu/ovmf-x86_64-vars.bin \
-    -device piix3-usb-uhci \
+    -device qemu-xhci \
     -drive id=pendrive,file=fat:rw:esp,format=raw,if=none \
     -device usb-storage,drive=pendrive \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
