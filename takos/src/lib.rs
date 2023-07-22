@@ -31,7 +31,6 @@ pub mod paging;
 mod gdt;
 mod pic;
 pub mod keyboard;
-pub mod async_task;
 mod pci;
 pub mod usb;
 

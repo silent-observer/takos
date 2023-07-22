@@ -1,4 +1,6 @@
-use crate::{register, register_array};
+use crate::register_array;
+use crate::register::Register;
+use crate::register;
 
 pub struct CapabilityRegisters {
     base: *mut u8
@@ -61,10 +63,27 @@ impl RuntimeRegisters {
     register_array!(erdp: mut u64 [base+0x20*i+0x38]);
 }
 
+pub struct DoorbellRegisters {
+    base: *mut u8
+}
+
+impl DoorbellRegisters {
+    unsafe fn new(base: *mut u8) -> Self {
+        Self {
+            base
+        }
+    }
+
+    pub fn ring_host(&self) {
+        unsafe{Register::<u32, 0x00>::new(self.base).write(0)};
+    }
+}
+
 pub struct Registers {
     pub capabilities: CapabilityRegisters,
     pub operational: OperationalRegisters,
     pub runtime: RuntimeRegisters,
+    pub doorbell: DoorbellRegisters,
 }
 
 impl Registers {
@@ -75,7 +94,9 @@ impl Registers {
             let operational = OperationalRegisters::new(op_base);
             let runtime_base = base.add(capabilities.rts_off().read() as usize);
             let runtime = RuntimeRegisters::new(runtime_base);
-            Self { capabilities, operational, runtime }
+            let doorbell_base = base.add(capabilities.db_off().read() as usize);
+            let doorbell = DoorbellRegisters::new(doorbell_base);
+            Self { capabilities, operational, runtime, doorbell }
         }
     }
 }

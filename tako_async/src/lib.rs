@@ -1,3 +1,7 @@
+#![no_std]
+
+extern crate alloc;
+
 use core::{pin::Pin, task::{Context, Poll}};
 
 use alloc::boxed::Box;

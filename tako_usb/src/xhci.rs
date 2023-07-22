@@ -1,10 +1,13 @@
 mod registers;
 mod contexts;
 pub mod trb;
+mod commands;
 
 use core::pin::Pin;
 
+use alloc::collections::BTreeMap;
 use alloc::{boxed::Box, vec::Vec};
+use futures::channel::oneshot::Sender;
 use spin::Mutex;
 use x86_64::VirtAddr;
 use x86_64::structures::paging::Translate;
@@ -22,6 +25,8 @@ pub struct Xhci<T: Translate + 'static> {
     pub command_ring: TrbRing,
     pub event_ring: EventRing,
     pub translator: &'static Mutex<T>,
+
+    pending_command_senders: Mutex<BTreeMap<u64, Sender<Trb>>>,
 }
 
 impl<T: Translate> Xhci<T> {
@@ -31,8 +36,10 @@ impl<T: Translate> Xhci<T> {
             device_contexts: Vec::new(),
             dcbaa: Box::pin(DeviceContextBaseAddressArray::new()),
             command_ring: TrbRing::new(2, &translator),
-            event_ring: EventRing::new(4, &translator),
+            event_ring: EventRing::new(&translator),
             translator,
+
+            pending_command_senders: Mutex::new(BTreeMap::new()),
         }
     }
 }
@@ -49,16 +56,17 @@ impl<T: Translate> UsbController for Xhci<T> {
         let crdp = self.translator.lock().translate_addr(VirtAddr::new(crdp)).unwrap();
         self.registers.operational.crcr().write(crdp.as_u64() | 0x1);
 
-        self.registers.runtime.erstsz(0).write(self.event_ring.size() as u32);
+        self.registers.runtime.erstsz(0).write(0x1);
 
         let erdp = self.event_ring.first_trb() as *const _ as u64;
         let erdp = self.translator.lock().translate_addr(VirtAddr::new(erdp)).unwrap();
-        self.registers.runtime.erdp(0).write(erdp.as_u64());
+        self.registers.runtime.erdp(0).write(erdp.as_u64() | 0x8);
 
-        let erstba = &self.event_ring.segment_table()[0] as *const _ as u64;
+        let erstba = self.event_ring.segment_table() as *const _ as u64;
         let erstba = self.translator.lock().translate_addr(VirtAddr::new(erstba)).unwrap();
         self.registers.runtime.erstba(0).write(erstba.as_u64());
 
+        self.registers.operational.usbsts().write(0x0000_0008);
         self.registers.operational.usbcmd().write(0x0000_0001);
     }
 

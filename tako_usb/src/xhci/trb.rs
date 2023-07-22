@@ -9,9 +9,9 @@ use x86_64::{structures::paging::Translate, VirtAddr};
 #[derive(Debug, Copy, Clone)]
 #[repr(C, align(16))]
 pub struct Trb {
-    parameter: u64,
-    status: u32,
-    control: u32,
+    pub parameter: u64,
+    pub status: u32,
+    pub control: u32,
 }
 
 impl Trb {
@@ -27,6 +27,18 @@ impl Trb {
             parameter: addr,
             status: 0,
             control: if is_last {6 << 10 | 0x2} else {6 << 10},
+        }
+    }
+
+    pub fn trb_type(&self) -> u8 {
+        (self.control >> 10) as u8 & 0x3F
+    }
+
+    pub fn noop_command() -> Self {
+        Self {
+            parameter: 0,
+            status: 0,
+            control: 23 << 10,
         }
     }
 }
@@ -87,9 +99,9 @@ impl TrbRing {
         let old_trb = self.data[self.enqueue_segment].as_mut().trb(self.enqueue_index);
         *old_trb = trb;
         if self.cycle_state {
-            old_trb.status |= 0x1;
+            old_trb.control |= 0x1;
         } else {
-            old_trb.status &= !0x1;
+            old_trb.control &= !0x1;
         }
         
         self.enqueue_index += 1;
@@ -108,50 +120,60 @@ impl TrbRing {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+#[repr(C, align(64))]
+pub struct ErstEntry {
+    pub base_addr: u64,
+    pub size: u16
+}
+
 #[derive(Debug, Clone)]
 pub struct EventRing {
-    data: Pin<Box<[TrbRingSegment]>>,
-    segment_table: Pin<Box<[(u64, u64)]>>,
-    dequeue_segment: usize,
+    data: Pin<Box<TrbRingSegment>>,
+    segment_table: Pin<Box<ErstEntry>>,
     dequeue_index: u8,
     cycle_state: bool,
 }
 
 impl EventRing {
-    pub fn new(segments: usize, translator: &Mutex<impl Translate>) -> Self {
-        assert!(segments > 0);
-        let data = vec![TrbRingSegment::new(); segments].into_boxed_slice();
-        let data = Box::into_pin(data);
+    pub fn new(translator: &Mutex<impl Translate>) -> Self {
+        let data = Box::pin(TrbRingSegment::new());
 
-        let mut segment_table = vec![(0, 0); segments].into_boxed_slice();
-        let translator = translator.lock();
-        for i in 0..segments {
-            let addr = &data.as_ref().get_ref()[i] as *const _ as u64;
-            segment_table[i] = (translator.translate_addr(VirtAddr::new(addr)).unwrap().as_u64(), 256);
-        }
+
+        let addr = data.as_ref().get_ref() as *const _ as u64;
+        let segment_table = ErstEntry{
+            base_addr: translator.lock().translate_addr(VirtAddr::new(addr)).unwrap().as_u64(),
+            size: 256
+        };
 
         Self {
             data,
-            segment_table: Box::into_pin(segment_table),
-            dequeue_segment: 0,
+            segment_table: Box::pin(segment_table),
             dequeue_index: 0,
             cycle_state: true,
         }
     }
 
-    pub fn size(&self) -> usize {
-        self.data.len()
-    }
-
     pub fn first_trb(&self) -> &Trb {
-        &self.data.as_ref().get_ref()[0].data[0]
+        &self.data.as_ref().get_ref().data[0]
     }
 
-    pub fn segment_table(&self) -> &[(u64, u64)] {
+    pub fn segment_table(&self) -> &ErstEntry {
         &self.segment_table
     }
 
     pub fn current_event(&self) -> &Trb {
-        &self.data.as_ref().get_ref()[self.dequeue_segment].data[self.dequeue_index as usize]
+        &self.data.as_ref().get_ref().data[self.dequeue_index as usize]
+    }
+
+    pub fn has_event(&self) -> bool {
+        (self.current_event().control & 0x1 != 0) == self.cycle_state
+    }
+
+    pub fn advance(&mut self) {
+        self.dequeue_index = self.dequeue_index.wrapping_add(1);
+        if self.dequeue_index == 0 {
+            self.cycle_state = !self.cycle_state;
+        }
     }
 }

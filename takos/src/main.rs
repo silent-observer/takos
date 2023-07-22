@@ -9,8 +9,10 @@ extern crate alloc;
 
 use takobl_api::BootData;
 
-use takos::{println, hlt_loop, async_task::{executor::Executor, Task, timer::{timer_executor, Timer}}, keyboard::{keyboard_driver, KeyboardEvent}, usb::{usb_driver, find_usb_host}};
+use takos::{println, hlt_loop, keyboard::{keyboard_driver, KeyboardEvent}, usb::{usb_driver, find_usb_host}};
 use takos::keyboard::get_keyboard_event_receiver;
+use tako_async::{executor::Executor, Task, timer::{timer_executor, Timer}};
+
 use thingbuf::mpsc::Receiver;
 
 // This function is called on panic.
@@ -44,10 +46,10 @@ const CAT: &str = r"
     |  |  |  |  |  |  |  |  |  |  |  |  |  |  |";
 
 async fn print_numbers() {
-    for i in 0..10 {
-        println!("async number: {}", i);
-        Timer::new(10).await;
-    }
+    // for i in 0..10 {
+    //     println!("async number: {}", i);
+    //     Timer::new(10).await;
+    // }
 }
 
 async fn print_keyboard_events(receiver: Receiver<KeyboardEvent>) {
