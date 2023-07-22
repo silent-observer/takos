@@ -4,6 +4,7 @@ use alloc::boxed::Box;
 use futures_util::Future;
 
 pub mod executor;
+pub mod timer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 struct TaskId(u64);

@@ -9,7 +9,7 @@ extern crate alloc;
 
 use takobl_api::BootData;
 
-use takos::{println, hlt_loop, async_task::{executor::Executor, Task}, keyboard::{keyboard_driver, KeyboardEvent}, usb::{usb_driver, find_usb_host}};
+use takos::{println, hlt_loop, async_task::{executor::Executor, Task, timer::{timer_executor, Timer}}, keyboard::{keyboard_driver, KeyboardEvent}, usb::{usb_driver, find_usb_host}};
 use takos::keyboard::get_keyboard_event_receiver;
 use thingbuf::mpsc::Receiver;
 
@@ -43,9 +43,11 @@ const CAT: &str = r"
     |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
     |  |  |  |  |  |  |  |  |  |  |  |  |  |  |";
 
-async fn print_number() {
-    println!("async number: 42");
-
+async fn print_numbers() {
+    for i in 0..10 {
+        println!("async number: {}", i);
+        Timer::new(10).await;
+    }
 }
 
 async fn print_keyboard_events(receiver: Receiver<KeyboardEvent>) {
@@ -73,7 +75,8 @@ pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
     }
 
     let mut executor = Executor::new();
-    executor.spawn(Task::new(print_number()));
+    executor.spawn(Task::new(timer_executor()));
+    executor.spawn(Task::new(print_numbers()));
     executor.spawn(Task::new(keyboard_driver()));
     let usb_host = find_usb_host().expect("Couldn't find USB host");
     executor.spawn(Task::new(usb_driver(usb_host)));
