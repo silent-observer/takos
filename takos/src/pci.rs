@@ -15,43 +15,43 @@ struct PciDeviceHandle {
 }
 
 #[derive(Debug, Copy, Clone)]
-struct PciDeviceData {
-    vendor_id: u16,
-    device_id: u16,
-    class_code: u8,
-    subclass_code: u8,
-    prog_if: u8,
-    revision_id: u8,
+pub struct PciDeviceData {
+    pub vendor_id: u16,
+    pub device_id: u16,
+    pub class_code: u8,
+    pub subclass_code: u8,
+    pub prog_if: u8,
+    pub revision_id: u8,
 }
 
 #[derive(Debug, Copy, Clone)]
-enum BaseAddressRegister {
+pub enum BaseAddressRegister {
     Memory(u64),
     Io(u64),
 }
 
 #[derive(Debug, Clone)]
-struct Header0 {
-    bars: [BaseAddressRegister; 6]
+pub struct Header0 {
+    pub bars: [BaseAddressRegister; 6]
 }
 #[derive(Debug, Clone)]
-struct Header1 {}
+pub struct Header1 {}
 #[derive(Debug, Clone)]
-struct Header2 {}
+pub struct Header2 {}
 
 #[derive(Debug, Clone)]
-enum Header {
+pub enum Header {
     Header0(Header0),
     Header1(Header1),
     Header2(Header2),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PciDevice {
     handle: PciDeviceHandle,
-    data: PciDeviceData,
+    pub data: PciDeviceData,
     is_multifunction: bool,
-    header: Header
+    pub header: Header
 }
 
 impl PciDeviceHandle {

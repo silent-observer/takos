@@ -33,6 +33,7 @@ mod pic;
 pub mod keyboard;
 pub mod async_task;
 mod pci;
+pub mod usb;
 
 pub fn init(boot_data: &BootData) {
     init_gdt();

@@ -10,6 +10,6 @@ qemu-system-x86_64 -m 4G -s \
     -drive if=pflash,format=raw,readonly=on,file=/usr/share/qemu/ovmf-x86_64-vars.bin \
     -device qemu-xhci \
     -drive id=pendrive,file=fat:rw:esp,format=raw,if=none \
-    -device usb-storage,drive=pendrive \
+    -device usb-storage,drive=pendrive,pcap=usb.pcap \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
     $argv[2..-1]

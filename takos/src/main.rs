@@ -9,7 +9,7 @@ extern crate alloc;
 
 use takobl_api::BootData;
 
-use takos::{println, hlt_loop, async_task::{executor::Executor, Task}, keyboard::{keyboard_driver, KeyboardEvent}};
+use takos::{println, hlt_loop, async_task::{executor::Executor, Task}, keyboard::{keyboard_driver, KeyboardEvent}, usb::{usb_driver, find_usb_host}};
 use takos::keyboard::get_keyboard_event_receiver;
 use thingbuf::mpsc::Receiver;
 
@@ -75,8 +75,10 @@ pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
     let mut executor = Executor::new();
     executor.spawn(Task::new(print_number()));
     executor.spawn(Task::new(keyboard_driver()));
-    let reciever = get_keyboard_event_receiver();
-    executor.spawn(Task::new(print_keyboard_events(reciever)));
+    let usb_host = find_usb_host().expect("Couldn't find USB host");
+    executor.spawn(Task::new(usb_driver(usb_host)));
+    // let reciever = get_keyboard_event_receiver();
+    // executor.spawn(Task::new(print_keyboard_events(reciever)));
     executor.run();
 
     // println!("Allocating more memory!");
