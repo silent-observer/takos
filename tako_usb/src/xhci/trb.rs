@@ -95,6 +95,13 @@ impl TrbRing {
         }
     }
 
+    pub fn get_current_addr(&self, translator: &Mutex<impl Translate>) -> u64 {
+        let addr = &self.data[self.enqueue_segment].as_ref().data[self.enqueue_index as usize];
+        let addr = addr as *const Trb as u64;
+        let addr = translator.lock().translate_addr(VirtAddr::new(addr)).unwrap();
+        addr.as_u64()
+    }
+
     pub fn enqueue_trb(&mut self, trb: Trb) {
         let old_trb = self.data[self.enqueue_segment].as_mut().trb(self.enqueue_index);
         *old_trb = trb;

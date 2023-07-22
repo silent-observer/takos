@@ -1,16 +1,14 @@
 use core::{future::Future, pin::Pin, task::{Context, Poll}};
 
 use alloc::collections::BTreeMap;
-use futures::channel::oneshot::{Receiver, Sender};
+use futures::channel::oneshot::{Receiver, Sender, self};
 use spin::Mutex;
-use x86_64::structures::paging::Translate;
+use tako_async::timer::Timer;
+use x86_64::{structures::paging::Translate, VirtAddr};
 
 use super::{Xhci, trb::{Trb, EventRing}};
 
-struct CommandFuture(Receiver<Trb>);
-
-impl CommandFuture {
-}
+pub struct CommandFuture(Receiver<Trb>);
 
 impl Future for CommandFuture {
     type Output = Trb;
@@ -21,7 +19,7 @@ impl Future for CommandFuture {
 }
 
 impl<T: Translate> Xhci<T> {
-    async fn handle_events(event_ring: &mut EventRing, pending_command_senders: &Mutex<BTreeMap<u64, Sender<Trb>>>) {
+    pub async fn handle_events(event_ring: &mut EventRing, pending_command_senders: &Mutex<BTreeMap<u64, Sender<Trb>>>) {
         loop {
             while event_ring.has_event() {
                 let trb = event_ring.current_event();
@@ -33,6 +31,16 @@ impl<T: Translate> Xhci<T> {
                 }
                 event_ring.advance();
             }
+            Timer::new(1).await;
         }
+    }
+
+    pub fn new_command(&mut self, trb: Trb) -> CommandFuture {
+        let (sender, receiver) = oneshot::channel();
+        let addr = self.command_ring.get_current_addr(&self.translator);
+        self.pending_command_senders.lock().insert(addr, sender);
+        self.command_ring.enqueue_trb(trb);
+        self.registers.doorbell.ring_host();
+        CommandFuture(receiver)
     }
 }

@@ -67,25 +67,20 @@ pub async fn usb_driver(usb_host: PciDevice) {
     let status = usb.registers.operational.usbsts().read();
     println!("status={:08X}", status);
 
-    let event = usb.poll_event();
-    let status = usb.registers.operational.usbsts().read();
-    println!("Event: {:X?}, status={:08X}", event, status);
-    Timer::new(10).await;
-
-    usb.command_ring.enqueue_trb(Trb::noop_command());
-    usb.registers.doorbell.ring_host();
-    let trb = usb.command_ring.first_trb();
-    println!("Sent command: {:X?}, control={:08X}", trb, trb.control);
-
-
+    // usb.command_ring.enqueue_trb(Trb::noop_command());
+    // usb.registers.doorbell.ring_host();
     for _ in 0..10 {
-        let event = usb.poll_event();
-        let status = usb.registers.operational.usbsts().read();
-        let crcr = usb.registers.operational.crcr().read();
-        println!("Event: {:X?}, status={:08X}, Crcr: {:08X}", event, status, crcr);
+        let command = usb.new_command(Trb::noop_command());
+        let trb = usb.command_ring.first_trb();
+        println!("Sent command: {:X?}", trb);
+
+        let trb = command.await;
+        println!("Response: {:X?}", trb);
         Timer::new(10).await;
     }
     
+
+    usb.run().await;
 
     pending::<()>().await;
 }
