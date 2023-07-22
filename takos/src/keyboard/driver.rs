@@ -1,11 +1,10 @@
 use core::{pin::Pin, task::{Context, Poll}, sync::atomic::{AtomicBool, Ordering}};
 
-use conquer_once::spin::OnceCell;
 use thingbuf::StaticThingBuf;
-use futures_util::{Stream, task::AtomicWaker, StreamExt};
+use futures::{Stream, task::AtomicWaker, StreamExt};
 use x86_64::instructions::port::Port;
 
-use crate::{println, print, keyboard::decoder::keycode_decoder};
+use crate::{println, keyboard::decoder::keycode_decoder};
 
 use super::commands;
 

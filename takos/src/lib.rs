@@ -16,6 +16,7 @@ use console::init_writer;
 use display::{FrameBuffer, ColorRGB};
 use gdt::init_gdt;
 use interrupts::init_idt;
+use ::log::info;
 use paging::{init_pat, unmap_loader_code};
 use pic::init_pics;
 use takobl_api::BootData;
@@ -33,6 +34,7 @@ mod pic;
 pub mod keyboard;
 mod pci;
 pub mod usb;
+mod log;
 
 pub fn init(boot_data: &BootData) {
     init_gdt();
@@ -43,6 +45,7 @@ pub fn init(boot_data: &BootData) {
     let frame_buffer = FrameBuffer::new(&boot_data.frame_buffer);
     frame_buffer.fill(ColorRGB::from_hex(0x000000));
     init_writer(frame_buffer);
+    crate::log::init().expect("Couldn't initialize logger");
 
     let image_device_path = boot_data.image_device_path.to_string();
 
@@ -51,7 +54,7 @@ pub fn init(boot_data: &BootData) {
     init_pics();
     x86_64::instructions::interrupts::enable();
 
-    println!("Image device path: {}", image_device_path);
+    info!("Image device path: {}", image_device_path);
     init_pci();
 }
 

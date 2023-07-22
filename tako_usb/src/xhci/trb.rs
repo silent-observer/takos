@@ -1,6 +1,5 @@
 use core::{marker::PhantomPinned, pin::Pin};
 
-use alloc::vec;
 use alloc::{vec::Vec, boxed::Box};
 use spin::Mutex;
 use x86_64::{structures::paging::Translate, VirtAddr};

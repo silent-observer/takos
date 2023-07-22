@@ -1,6 +1,7 @@
-use core::future::pending;
+use core::future::{pending, self};
 
 use alloc::boxed::Box;
+use log::info;
 use tako_usb::xhci::trb::Trb;
 use tako_usb::{xhci::Xhci, controller::UsbController};
 use takobl_api::PHYSICAL_MEMORY_OFFSET;
@@ -36,51 +37,53 @@ pub async fn usb_driver(usb_host: PciDevice) {
     let mut usb= match usb_host.data.prog_if {
         0x30 => {
             let xhci = Xhci::new(pci_base as *mut u8, &PAGE_TABLE);
-            println!("caplength={}", xhci.registers.capabilities.cap_length().read());
-            println!("hciversion={:04X}", xhci.registers.capabilities.hci_version().read());
-            println!("hcsparams1={:08X}", xhci.registers.capabilities.hcs_params_1().read());
-            println!("hcsparams2={:08X}", xhci.registers.capabilities.hcs_params_2().read());
-            println!("hcsparams3={:08X}", xhci.registers.capabilities.hcs_params_3().read());
-            println!("hccparams1={:08X}", xhci.registers.capabilities.hcc_params_1().read());
-            println!("usbcmd={:08X}", xhci.registers.operational.usbcmd().read());
-            println!("usbsts={:08X}", xhci.registers.operational.usbsts().read());
+            info!("caplength={}", xhci.registers.capabilities.cap_length().read());
+            info!("hciversion={:04X}", xhci.registers.capabilities.hci_version().read());
+            info!("hcsparams1={:08X}", xhci.registers.capabilities.hcs_params_1().read());
+            info!("hcsparams2={:08X}", xhci.registers.capabilities.hcs_params_2().read());
+            info!("hcsparams3={:08X}", xhci.registers.capabilities.hcs_params_3().read());
+            info!("hccparams1={:08X}", xhci.registers.capabilities.hcc_params_1().read());
+            info!("usbcmd={:08X}", xhci.registers.operational.usbcmd().read());
+            info!("usbsts={:08X}", xhci.registers.operational.usbsts().read());
             xhci
         }
         _ => panic!("We don't support USB controller of type {:02X} yet!", usb_host.data.prog_if)
     };
 
     let pagesize = usb.registers.operational.pagesize().read();
-    println!("pagesize={:08X}", pagesize);
+    info!("pagesize={:08X}", pagesize);
 
     usb.initialize();
+    let running = usb.run();
 
-    let erstba = usb.registers.runtime.erstba(0).read();
-    println!("erstba={:08X}", erstba);
-    let erdp = usb.registers.runtime.erdp(0).read();
-    println!("erdp={:08X}", erdp);
-    let erstsz = usb.registers.runtime.erstsz(0).read();
-    println!("erstsz={:08X}", erstsz);
-    // let erst = unsafe {
-    //     ((erstba + PHYSICAL_MEMORY_OFFSET) as *mut Erst).as_ref().unwrap()
-    // };
-    // println!("erst[0]={:08X}", erst.0[0].base_addr);
-    let status = usb.registers.operational.usbsts().read();
-    println!("status={:08X}", status);
+    let other = async {
+        let erstba = usb.registers.runtime.erstba(0).read();
+        info!("erstba={:08X}", erstba);
+        let erdp = usb.registers.runtime.erdp(0).read();
+        info!("erdp={:08X}", erdp);
+        let erstsz = usb.registers.runtime.erstsz(0).read();
+        info!("erstsz={:08X}", erstsz);
+        // let erst = unsafe {
+        //     ((erstba + PHYSICAL_MEMORY_OFFSET) as *mut Erst).as_ref().unwrap()
+        // };
+        // println!("erst[0]={:08X}", erst.0[0].base_addr);
+        let status = usb.registers.operational.usbsts().read();
+        info!("status={:08X}", status);
 
-    // usb.command_ring.enqueue_trb(Trb::noop_command());
-    // usb.registers.doorbell.ring_host();
-    for _ in 0..10 {
-        let command = usb.new_command(Trb::noop_command());
-        let trb = usb.command_ring.first_trb();
-        println!("Sent command: {:X?}", trb);
+        // usb.command_ring.enqueue_trb(Trb::noop_command());
+        // usb.registers.doorbell.ring_host();
+        for _ in 0..10 {
+            let command = usb.new_command(Trb::noop_command());
+            let trb = *usb.command_ring.lock().first_trb();
+            info!("Sent command: {:X?}", trb);
 
-        let trb = command.await;
-        println!("Response: {:X?}", trb);
-        Timer::new(10).await;
-    }
-    
+            let trb = command.await;
+            info!("Response: {:X?}", trb);
+            Timer::new(10).await;
+        }
+    };
 
-    usb.run().await;
+    futures::future::join(running, other).await;
 
     pending::<()>().await;
 }

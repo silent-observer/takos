@@ -139,6 +139,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "log"
+version = "0.4.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b06a4cde4c0f271a446782e3eff8de789548ce57dbc8eca9292c27f4a42004b4"
+
+[[package]]
 name = "pin-project"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -243,6 +249,7 @@ dependencies = [
  "async-trait",
  "bitfield",
  "futures",
+ "log",
  "spin 0.9.8",
  "tako_async",
  "x86_64",
@@ -258,8 +265,9 @@ version = "0.1.0"
 dependencies = [
  "bitflags 2.3.3",
  "conquer-once",
- "futures-util",
+ "futures",
  "lazy_static",
+ "log",
  "spin 0.9.8",
  "tako_async",
  "tako_usb",

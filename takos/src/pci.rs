@@ -2,6 +2,7 @@ use core::fmt::Display;
 
 use alloc::vec::Vec;
 use alloc::vec;
+use log::info;
 use spin::Mutex;
 use x86_64::instructions::port::Port;
 
@@ -273,6 +274,6 @@ pub static PCI_DEVICES: Mutex<Vec<PciDevice>> = Mutex::new(Vec::new());
 pub fn init_pci() {
     *PCI_DEVICES.lock() = enumerate_all();
     for device in PCI_DEVICES.lock().iter() {
-        println!("Found device {}", device);
+        info!("Found device {}", device);
     }
 }

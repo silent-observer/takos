@@ -1,4 +1,4 @@
-use futures_util::StreamExt;
+use futures::StreamExt;
 use x86_64::instructions::port::Port;
 
 use super::driver::ScancodeStream;
