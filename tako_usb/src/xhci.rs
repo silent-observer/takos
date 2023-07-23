@@ -9,6 +9,7 @@ use alloc::collections::BTreeMap;
 use alloc::{boxed::Box, vec::Vec};
 use async_trait::async_trait;
 use futures::channel::oneshot::Sender;
+use log::info;
 use spin::Mutex;
 use x86_64::VirtAddr;
 use x86_64::structures::paging::Translate;
@@ -70,6 +71,14 @@ impl<T: Translate> UsbController for Xhci<T> {
 
         self.registers.operational.usbsts().write(0x0000_0008);
         self.registers.operational.usbcmd().write(0x0000_0001);
+    }
+
+    fn detect_ports(&self) {
+        let max_ports = self.registers.capabilities.hcs_params_1().read() >> 24;
+        for port in 0..max_ports {
+            let portsc = self.registers.operational.portsc(port as usize).read();
+            info!("Port {} = {:08X}", port, portsc);
+        }
     }
 
     async fn run(&self) {

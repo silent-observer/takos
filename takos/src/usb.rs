@@ -70,9 +70,11 @@ pub async fn usb_driver(usb_host: PciDevice) {
         let status = usb.registers.operational.usbsts().read();
         info!("status={:08X}", status);
 
+        usb.detect_ports();
+
         // usb.command_ring.enqueue_trb(Trb::noop_command());
         // usb.registers.doorbell.ring_host();
-        for _ in 0..1000 {
+        for _ in 0..4 {
             let command = usb.new_command(Trb::noop_command());
             let trb = *usb.command_ring.lock().first_trb();
             info!("Sent command: {:X?}", trb);

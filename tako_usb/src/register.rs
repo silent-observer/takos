@@ -101,7 +101,6 @@ where T: RegisterType
     }
 }
 
-#[allow(dead_code)]
 pub type ReadOnlyRuntimeRegister<T> = RawRuntimeRegister<T, RegisterPermissionsReadOnly>;
 pub type RuntimeRegister<T> = RawRuntimeRegister<T, RegisterPermissionsReadWrite>;
 

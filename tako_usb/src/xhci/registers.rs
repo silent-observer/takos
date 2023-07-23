@@ -42,6 +42,11 @@ impl OperationalRegisters {
     register!(crcr: mut u64 [base+0x18]);
     register!(dcbaap: mut u64 [base+0x30]);
     register!(config: mut u32 [base+0x38]);
+
+    register_array!(portsc: mut u32 [base+0x10*i+0x400]);
+    register_array!(portpm: mut u32 [base+0x10*i+0x404]);
+    register_array!(portli: u32 [base+0x10*i+0x408]);
+    register_array!(porthlmpc: mut u32 [base+0x10*i+0x40C]);
 }
 
 pub struct RuntimeRegisters {

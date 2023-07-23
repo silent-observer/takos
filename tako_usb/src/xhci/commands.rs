@@ -1,13 +1,12 @@
 use core::{future::Future, pin::Pin, task::{Context, Poll}};
 
-use alloc::collections::BTreeMap;
-use futures::channel::oneshot::{Receiver, Sender, self};
+use futures::channel::oneshot::{Receiver, self};
 use log::info;
-use spin::Mutex;
 use tako_async::timer::Timer;
 use x86_64::structures::paging::Translate;
 
-use super::{Xhci, trb::{Trb, EventRing}, registers::Registers};
+use super::trb::Trb;
+use super::Xhci;
 
 pub struct CommandFuture(Receiver<Trb>);
 
