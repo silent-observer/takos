@@ -1,4 +1,4 @@
-use core::{marker::PhantomPinned, pin::Pin};
+use core::{marker::PhantomPinned, pin::Pin, mem::transmute};
 
 use alloc::{vec::Vec, boxed::Box};
 use spin::Mutex;
@@ -13,6 +13,60 @@ pub struct Trb {
     pub control: u32,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+#[allow(dead_code)]
+pub enum TrbType {
+    Empty = 0,
+    Normal,
+    Setup,
+    Data,
+    Status,
+    Isoch,
+    Link,
+    EventData,
+    NoOp,
+    EnableSlotCommand,
+    DisableSlotCommand,
+    AddressDeviceCommand,
+    ConfigureEndpointCommand,
+    EvaluateContextCommand,
+    ResetEndpointCommand,
+    StopEndpointCommand,
+    SetTrDequePointerCommand,
+    ResetDeviceCommand,
+    ForceEventCommand,
+    NegotiateBandwidthCommand,
+    SetLatencyToleranceValueCommand,
+    GetPortBandwidthCommand,
+    ForceHeaderCommand,
+    NoOpCommand,
+    GetExtendedPropertyCommand,
+    SetExtendedPropertyCommand,
+    TransferEvent = 32,
+    CommandCompletionEvent,
+    PortStatusChangeEvent,
+    BandwidthRequestEvent,
+    DoorbellEvent,
+    HostControllerEvent,
+    DeviceNotificationEvent,
+    MfindexWrapEvent,
+}
+
+impl TrbType {
+    pub const fn to_control(&self) -> u32 {
+        ((*self as u8) as u32) << 10
+    }
+
+    pub fn from_control(control: u32) -> Self {
+        let val = (control >> 10) as u8 & 0x3F;
+        match val {
+            0..=25 | 32..=39 => unsafe {transmute(val)}
+            _ => panic!("Invalid TRB type!")
+        }
+    }
+}
+
 impl Trb {
     fn empty() -> Self {
         Self {
@@ -22,22 +76,24 @@ impl Trb {
         }
     }
     fn link_trb(addr: u64, is_last: bool) -> Self {
+        let control = TrbType::Link.to_control();
+        let control = if is_last {control | 0x2} else {control};
         Self {
             parameter: addr,
             status: 0,
-            control: if is_last {6 << 10 | 0x2} else {6 << 10},
+            control,
         }
     }
 
-    pub fn trb_type(&self) -> u8 {
-        (self.control >> 10) as u8 & 0x3F
+    pub fn trb_type(&self) -> TrbType {
+        TrbType::from_control(self.control)
     }
 
     pub fn noop_command() -> Self {
         Self {
             parameter: 0,
             status: 0,
-            control: 23 << 10,
+            control: TrbType::NoOpCommand.to_control(),
         }
     }
 }

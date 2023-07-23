@@ -9,15 +9,17 @@ use alloc::collections::BTreeMap;
 use alloc::{boxed::Box, vec::Vec};
 use async_trait::async_trait;
 use futures::channel::oneshot::Sender;
+use futures::future::join_all;
 use log::info;
 use spin::Mutex;
+use tako_async::timer::Timer;
 use x86_64::VirtAddr;
 use x86_64::structures::paging::Translate;
 
 use crate::controller::UsbController;
 
 use self::contexts::{DeviceContext, DeviceContextBaseAddressArray};
-use self::trb::{TrbRing, EventRing, Trb};
+use self::trb::{TrbRing, EventRing, Trb, TrbType};
 use self::registers::Registers;
 
 pub struct Xhci<T: Translate + 'static> {
@@ -28,7 +30,7 @@ pub struct Xhci<T: Translate + 'static> {
     pub event_ring: Mutex<EventRing>,
     pub translator: &'static Mutex<T>,
 
-    pending_command_senders: Mutex<BTreeMap<u64, Sender<Trb>>>,
+    pending_event_senders: Mutex<BTreeMap<(TrbType, u64), Sender<Trb>>>,
 }
 
 impl<T: Translate> Xhci<T> {
@@ -41,8 +43,17 @@ impl<T: Translate> Xhci<T> {
             event_ring: Mutex::new(EventRing::new(&translator)),
             translator,
 
-            pending_command_senders: Mutex::new(BTreeMap::new()),
+            pending_event_senders: Mutex::new(BTreeMap::new()),
         }
+    }
+
+    async fn initialize_device(&self, port: u8) {
+        let portsc = self.registers.operational.portsc(port as usize).read();
+        if portsc & 0x1 == 0 { return; } // No device
+
+        self.reset_port(port as u8).await;
+        let portsc = self.registers.operational.portsc(port as usize).read();
+        info!("Port {} = {:08X}", port, portsc);
     }
 }
 
@@ -73,15 +84,42 @@ impl<T: Translate> UsbController for Xhci<T> {
         self.registers.operational.usbcmd().write(0x0000_0001);
     }
 
-    fn detect_ports(&self) {
+    async fn initialize_devices(&self) {
         let max_ports = self.registers.capabilities.hcs_params_1().read() >> 24;
-        for port in 0..max_ports {
-            let portsc = self.registers.operational.portsc(port as usize).read();
-            info!("Port {} = {:08X}", port, portsc);
-        }
+        join_all((1..=max_ports).into_iter().map(|port|
+            self.initialize_device(port as u8)
+        )).await;
     }
 
     async fn run(&self) {
         self.handle_events().await;
+    }
+}
+
+impl<T:Translate> Xhci<T> {
+    pub fn port_status_change(&self, port: u8) {
+        let portsc = self.registers.operational.portsc(port as usize).read();
+        info!("Port {} status change: {:08X}", port, portsc);
+        let write_portsc = portsc & 0xC3E0 | 0x20_0000;
+        self.registers.operational.portsc(port as usize).write(write_portsc);
+    }
+
+    pub async fn handle_events(&self) {
+        loop {
+            let mut event_ring = self.event_ring.lock();
+            while event_ring.has_event() {
+                let trb = event_ring.current_event();
+                info!("Got event {:X?}!", trb);
+                match trb.trb_type() {
+                    TrbType::CommandCompletionEvent | TrbType::PortStatusChangeEvent => {
+                        self.handle_event_notification(trb);
+                    }
+                    _ => {}
+                }
+                event_ring.advance();
+                self.registers.runtime.erdp(0).write(event_ring.get_current_addr(self.translator))
+            }
+            Timer::new(1).await;
+        }
     }
 }

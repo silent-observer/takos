@@ -2,3 +2,5 @@
 */.vscode/
 *.pcap
 esp/
+*.fish
+!runner.fish
