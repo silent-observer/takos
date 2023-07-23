@@ -1,8 +1,23 @@
+mod noop_command;
+mod link;
+mod command_completion_event;
+mod enable_slot_command;
+mod address_device_command;
+mod disable_slot_command;
+
 use core::{marker::PhantomPinned, pin::Pin, mem::transmute};
 
 use alloc::{vec::Vec, boxed::Box};
 use spin::Mutex;
 use x86_64::{structures::paging::Translate, VirtAddr};
+
+
+use link::LinkTrb;
+pub use noop_command::NoOpCommandTrb;
+pub use enable_slot_command::EnableSlotCommandTrb;
+pub use disable_slot_command::DisableSlotCommandTrb;
+pub use command_completion_event::{CommandCompletionCode, CommandCompletionEventTrb};
+pub use address_device_command::AddressDeviceCommandTrb;
 
 
 #[derive(Debug, Copy, Clone)]
@@ -75,26 +90,9 @@ impl Trb {
             control: 0,
         }
     }
-    fn link_trb(addr: u64, is_last: bool) -> Self {
-        let control = TrbType::Link.to_control();
-        let control = if is_last {control | 0x2} else {control};
-        Self {
-            parameter: addr,
-            status: 0,
-            control,
-        }
-    }
 
     pub fn trb_type(&self) -> TrbType {
         TrbType::from_control(self.control)
-    }
-
-    pub fn noop_command() -> Self {
-        Self {
-            parameter: 0,
-            status: 0,
-            control: TrbType::NoOpCommand.to_control(),
-        }
     }
 }
 
@@ -142,7 +140,7 @@ impl TrbRing {
             let next_virt_addr = VirtAddr::new(&data[next_index].data[0] as *const Trb as u64);
             let phys_addr = translator.lock().translate_addr(next_virt_addr).unwrap();
             let last_trb = data[i].as_mut().trb((TRB_RING_SIZE-1) as u8);
-            *last_trb = Trb::link_trb(phys_addr.as_u64(), i == segments - 1);
+            *last_trb = LinkTrb::new(phys_addr.as_u64(), i == segments - 1).into();
         }
         Self {
             data,

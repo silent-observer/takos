@@ -2,7 +2,7 @@ use core::future::{pending, self};
 
 use alloc::boxed::Box;
 use log::info;
-use tako_usb::xhci::trb::Trb;
+use tako_usb::xhci::trb::{Trb, NoOpCommandTrb};
 use tako_usb::{xhci::Xhci, controller::UsbController};
 use takobl_api::PHYSICAL_MEMORY_OFFSET;
 use tako_async::timer::Timer;
@@ -74,15 +74,15 @@ pub async fn usb_driver(usb_host: PciDevice) {
 
         // usb.command_ring.enqueue_trb(Trb::noop_command());
         // usb.registers.doorbell.ring_host();
-        for _ in 0..4 {
-            let command = usb.send_command(Trb::noop_command());
-            let trb = *usb.command_ring.lock().first_trb();
-            info!("Sent command: {:X?}", trb);
+        // for _ in 0..4 {
+        //     let command = usb.send_command(NoOpCommandTrb.into());
+        //     let trb = *usb.command_ring.lock().first_trb();
+        //     info!("Sent command: {:X?}", trb);
 
-            let trb = command.await;
-            info!("Response: {:X?}", trb);
-            Timer::new(10).await;
-        }
+        //     let trb = command.await;
+        //     info!("Response: {:X?}", trb);
+        //     Timer::new(10).await;
+        // }
     };
 
     futures::future::join(running, other).await;

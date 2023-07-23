@@ -3,7 +3,8 @@ set INPUT (realpath $argv[1])
 set DIR (cd (dirname (status -f)); and pwd)
 cp $DIR/takobl/target/x86_64-unknown-uefi/release/takobl.efi $DIR/esp/efi/boot/bootx64.efi
 cp $INPUT $DIR/esp/kernel.elf
-qemu-system-x86_64 -m 4G -s \
+qemu-system-x86_64-debug-xhci \
+    -m 4G -s \
     -enable-kvm \
     -cpu host \
     -drive if=pflash,format=raw,readonly=on,file=/usr/share/qemu/ovmf-x86_64.bin \

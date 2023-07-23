@@ -1,9 +1,11 @@
 use core::{future::Future, pin::Pin, task::{Context, Poll}};
 
+use alloc::boxed::Box;
 use futures::channel::oneshot::{Receiver, self};
-use x86_64::structures::paging::Translate;
+use log::info;
+use x86_64::{structures::paging::Translate, VirtAddr};
 
-use super::trb::{Trb, TrbType};
+use super::{trb::{Trb, TrbType, AddressDeviceCommandTrb}, contexts::InputContext};
 use super::Xhci;
 
 pub struct PendingEventFuture(Receiver<Trb>);
@@ -38,8 +40,22 @@ impl<T: Translate> Xhci<T> {
 
         command_ring.enqueue_trb(trb);
         self.registers.doorbell.ring_host();
-        
+
         future
+    }
+
+    pub async fn send_address_device_command(&self, slot_id: u8, input_context: Box<InputContext>) -> Trb {
+        let ptr = Box::into_raw(input_context);
+        let addr = self.translator.lock().translate_addr(VirtAddr::new(ptr as u64)).unwrap().as_u64();
+        let trb = AddressDeviceCommandTrb::new(slot_id, addr);
+        let trb = trb.into();
+        info!("TRB: {:X?}", trb);
+        let response = self.send_command(trb).await;
+        // unsafe {
+        //     let b = Box::from_raw(ptr);
+        //     drop(b);
+        // }
+        response
     }
 
     pub fn reset_port(&self, port: u8) -> PendingEventFuture {
