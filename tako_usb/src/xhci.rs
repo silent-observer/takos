@@ -73,6 +73,6 @@ impl<T: Translate> UsbController for Xhci<T> {
     }
 
     async fn run(&self) {
-        Self::handle_events(&self.event_ring, &self.pending_command_senders).await;
+        self.handle_events().await;
     }
 }

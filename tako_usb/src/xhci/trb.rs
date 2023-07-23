@@ -42,17 +42,19 @@ impl Trb {
     }
 }
 
+const TRB_RING_SIZE: usize = 256;
+
 #[derive(Debug, Copy, Clone)]
 #[repr(C, align(16))]
 struct TrbRingSegment {
-    data: [Trb; 256],
+    data: [Trb; TRB_RING_SIZE],
     _pin: PhantomPinned
 }
 
 impl TrbRingSegment {
     fn new() -> Self {
         Self {
-            data: [Trb::empty(); 256],
+            data: [Trb::empty(); TRB_RING_SIZE],
             _pin: PhantomPinned,
         }
     }
@@ -83,7 +85,7 @@ impl TrbRing {
             let next_index = if i == segments - 1 {0} else {i + 1};
             let next_virt_addr = VirtAddr::new(&data[next_index].data[0] as *const Trb as u64);
             let phys_addr = translator.lock().translate_addr(next_virt_addr).unwrap();
-            let last_trb = data[i].as_mut().trb(255);
+            let last_trb = data[i].as_mut().trb((TRB_RING_SIZE-1) as u8);
             *last_trb = Trb::link_trb(phys_addr.as_u64(), i == segments - 1);
         }
         Self {
@@ -111,7 +113,14 @@ impl TrbRing {
         }
         
         self.enqueue_index += 1;
-        if self.enqueue_index == 255 {
+        if self.enqueue_index as usize == TRB_RING_SIZE - 1 {
+            let link_trb = self.data[self.enqueue_segment].as_mut().trb(self.enqueue_index);
+            if self.cycle_state {
+                link_trb.control |= 0x1;
+            } else {
+                link_trb.control &= !0x1;
+            }
+
             self.enqueue_index = 0;
             self.enqueue_segment += 1;
             if self.enqueue_segment >= self.data.len() {
@@ -149,7 +158,7 @@ impl EventRing {
         let addr = data.as_ref().get_ref() as *const _ as u64;
         let segment_table = ErstEntry{
             base_addr: translator.lock().translate_addr(VirtAddr::new(addr)).unwrap().as_u64(),
-            size: 256
+            size: TRB_RING_SIZE as u16
         };
 
         Self {
@@ -178,8 +187,19 @@ impl EventRing {
 
     pub fn advance(&mut self) {
         self.dequeue_index = self.dequeue_index.wrapping_add(1);
+        if self.dequeue_index == TRB_RING_SIZE as u8 {
+            self.dequeue_index = 0;
+        }
+
         if self.dequeue_index == 0 {
             self.cycle_state = !self.cycle_state;
         }
+    }
+
+    pub fn get_current_addr(&self, translator: &Mutex<impl Translate>) -> u64 {
+        let addr = &self.data.as_ref().data[self.dequeue_index as usize];
+        let addr = addr as *const Trb as u64;
+        let addr = translator.lock().translate_addr(VirtAddr::new(addr)).unwrap();
+        addr.as_u64()
     }
 }

@@ -7,7 +7,7 @@ use spin::Mutex;
 use tako_async::timer::Timer;
 use x86_64::structures::paging::Translate;
 
-use super::{Xhci, trb::{Trb, EventRing}};
+use super::{Xhci, trb::{Trb, EventRing}, registers::Registers};
 
 pub struct CommandFuture(Receiver<Trb>);
 
@@ -20,19 +20,20 @@ impl Future for CommandFuture {
 }
 
 impl<T: Translate> Xhci<T> {
-    pub async fn handle_events(event_ring: &Mutex<EventRing>, pending_command_senders: &Mutex<BTreeMap<u64, Sender<Trb>>>) {
+    pub async fn handle_events(&self) {
         loop {
-            let mut event_ring = event_ring.lock();
+            let mut event_ring = self.event_ring.lock();
             while event_ring.has_event() {
                 let trb = event_ring.current_event();
                 info!("Got event {:X?}!", trb);
                 if trb.trb_type() == 33 {
                     let addr = trb.parameter;
-                    if let Some(sender) = pending_command_senders.lock().remove(&addr) {
+                    if let Some(sender) = self.pending_command_senders.lock().remove(&addr) {
                         sender.send(*trb).unwrap();
                     }
                 }
                 event_ring.advance();
+                self.registers.runtime.erdp(0).write(event_ring.get_current_addr(self.translator))
             }
             Timer::new(1).await;
         }
