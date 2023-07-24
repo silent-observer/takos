@@ -1,5 +1,3 @@
-use core::pin::Pin;
-
 use bitfield::bitfield;
 
 bitfield! {

@@ -27,7 +27,7 @@ impl<T: Translate> Xhci<T> {
         }
     }
 
-    fn new_pending_event(&self, trb_type: TrbType, parameter: u64) -> PendingEventFuture {
+    pub fn new_pending_event(&self, trb_type: TrbType, parameter: u64) -> PendingEventFuture {
         let (sender, receiver) = oneshot::channel();
         self.pending_event_senders.lock().insert((trb_type, parameter), sender);
         PendingEventFuture(receiver)

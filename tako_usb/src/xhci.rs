@@ -2,6 +2,7 @@ mod registers;
 mod contexts;
 pub mod trb;
 mod commands;
+pub mod transfer;
 
 use core::pin::Pin;
 
@@ -20,13 +21,16 @@ use crate::controller::UsbController;
 use crate::xhci::trb::{EnableSlotCommandTrb, CommandCompletionCode, CommandCompletionEventTrb};
 
 use self::contexts::{DeviceContext, DeviceContextBaseAddressArray, InputContext};
-use self::trb::{TrbRing, EventRing, Trb, TrbType, DisableSlotCommandTrb};
+use self::transfer::ControlTransferBuilder;
+use self::trb::{TrbRing, EventRing, Trb, TrbType, DisableSlotCommandTrb, DataTransferDirection, TypeOfRequest, Recipient};
 use self::registers::Registers;
 
 pub struct PortData {
     pub port: u8,
+    pub slot_id: u8,
     transfer_ring: TrbRing,
     device_context: Pin<Box<DeviceContext>>,
+    max_packet_size: u16,
 }
 
 pub struct Xhci<T: Translate + 'static> {
@@ -197,6 +201,8 @@ impl<T:Translate> Xhci<T> {
         
         let result = PortData {
             port,
+            slot_id,
+            max_packet_size,
             transfer_ring: TrbRing::new(2, &self.translator),
             device_context: Box::pin(DeviceContext::new()),
         };
@@ -230,5 +236,24 @@ impl<T:Translate> Xhci<T> {
         info!("Slot {} = {:X?}", slot_id, context);
 
         Some(result)
+    }
+
+    async fn get_device_descriptor(&self, port_data: &mut PortData) {
+        let data = Box::pin(x)
+        // let trbs = ControlTransferBuilder
+        //     ::new(&self.translator, port_data.max_packet_size as usize)
+        //     .direction(DataTransferDirection::DeviceToHost)
+        //     .type_of_request(TypeOfRequest::Standard)
+        //     .recipient(Recipient::Device)
+        //     .request(transfer::standard::StandardRequest::GET_DESCRIPTOR)
+        //     .value(transfer::standard::get_descriptor_value(
+        //         transfer::standard::DescriptorType::DEVICE,
+        //         0))
+        //     .wi
+
+    }
+
+    async fn identify_device(&self, port_data: &mut PortData) {
+        
     }
 }

@@ -1,5 +1,5 @@
 use crate::register_array;
-use crate::register::Register;
+use crate::register::{Register, RuntimeRegister};
 use crate::register;
 
 pub struct CapabilityRegisters {
@@ -81,6 +81,10 @@ impl DoorbellRegisters {
 
     pub fn ring_host(&self) {
         unsafe{Register::<u32, 0x00>::new(self.base).write(0)};
+    }
+
+    pub fn ring_device_control(&self, slot_id: u8) {
+        unsafe{RuntimeRegister::<u32>::new(self.base, slot_id as usize * 0x4).write(0x1)};
     }
 }
 

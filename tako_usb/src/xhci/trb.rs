@@ -4,6 +4,10 @@ mod command_completion_event;
 mod enable_slot_command;
 mod address_device_command;
 mod disable_slot_command;
+mod normal;
+mod setup;
+mod data;
+mod status;
 
 use core::{marker::PhantomPinned, pin::Pin, mem::transmute};
 
@@ -18,6 +22,11 @@ pub use enable_slot_command::EnableSlotCommandTrb;
 pub use disable_slot_command::DisableSlotCommandTrb;
 pub use command_completion_event::{CommandCompletionCode, CommandCompletionEventTrb};
 pub use address_device_command::AddressDeviceCommandTrb;
+
+pub use normal::NormalTrb;
+pub use setup::{SetupTrb, TypeOfRequest, Recipient};
+pub use data::DataTrb;
+pub use status::StatusTrb;
 
 
 #[derive(Debug, Copy, Clone)]
@@ -66,6 +75,22 @@ pub enum TrbType {
     HostControllerEvent,
     DeviceNotificationEvent,
     MfindexWrapEvent,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(u8)]
+pub enum DataTransferDirection {
+    HostToDevice = 0,
+    DeviceToHost = 1,
+}
+
+impl DataTransferDirection {
+    pub fn opposite(&self) -> Self {
+        match self {
+            DataTransferDirection::HostToDevice => DataTransferDirection::DeviceToHost,
+            DataTransferDirection::DeviceToHost => DataTransferDirection::HostToDevice,
+        }
+    }
 }
 
 impl TrbType {
