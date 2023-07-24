@@ -159,9 +159,7 @@ where
 
 impl<Mem: MemoryInterface + 'static> Xhci<Mem> {
     pub fn send_transfer(&self, slot_id: u8, transfer_ring: &mut TrbRing, trbs: &[Trb]) -> PendingEventFuture {
-        info!("Starting transfer");
         let event_ring = self.event_ring.lock();
-        info!("Got lock");
         let (last_trb, other_trbs) = trbs.split_last().unwrap();
         for trb in other_trbs {
             transfer_ring.enqueue_trb(*trb);
@@ -170,7 +168,6 @@ impl<Mem: MemoryInterface + 'static> Xhci<Mem> {
         let future = self.new_pending_event(TrbType::TransferEvent, addr);
 
         transfer_ring.enqueue_trb(*last_trb);
-        info!("Enqueued to {:08X}", addr);
         self.registers.doorbell.ring_device_control(slot_id);
         drop(event_ring);
         future

@@ -120,6 +120,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "indenter"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce23b50ad8242c51a442f3ff322d56b02f08852c77e4c0b4d3fd684abc89c683"
+
+[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -249,6 +255,7 @@ dependencies = [
  "async-trait",
  "bitfield",
  "futures",
+ "indenter",
  "log",
  "spin 0.9.8",
  "tako_async",

@@ -3,6 +3,7 @@ mod contexts;
 pub mod trb;
 mod commands;
 pub mod transfer;
+mod device_info;
 
 use core::pin::Pin;
 
@@ -16,12 +17,11 @@ use spin::Mutex;
 use tako_async::timer::Timer;
 
 use crate::controller::{UsbController, MemoryInterface};
-use crate::xhci::trb::{EnableSlotCommandTrb, CompletionCode, CommandCompletionEventTrb, TransferEventTrb};
+use crate::xhci::trb::{EnableSlotCommandTrb, CompletionCode, CommandCompletionEventTrb};
 
 use self::contexts::{DeviceContext, DeviceContextBaseAddressArray, InputContext};
-use self::transfer::ControlTransferBuilder;
-use self::transfer::standard::DeviceDescriptor;
-use self::trb::{TrbRing, EventRing, Trb, TrbType, DisableSlotCommandTrb, DataTransferDirection, TypeOfRequest, Recipient};
+use self::device_info::DeviceInfo;
+use self::trb::{TrbRing, EventRing, Trb, TrbType, DisableSlotCommandTrb};
 use self::registers::Registers;
 
 pub struct PortData {
@@ -30,6 +30,7 @@ pub struct PortData {
     transfer_ring: TrbRing,
     device_context: Pin<Box<DeviceContext>>,
     max_packet_size: u16,
+    info: Option<DeviceInfo>
 }
 
 pub struct Xhci<Mem: MemoryInterface + 'static> {
@@ -211,6 +212,7 @@ impl<Mem: MemoryInterface + 'static> Xhci<Mem> {
             max_packet_size,
             transfer_ring: TrbRing::new(2, self.mem),
             device_context: Box::pin(DeviceContext::new()),
+            info: None,
         };
 
         let ep = &mut input_context.endpoint_contexts[0];
@@ -243,31 +245,10 @@ impl<Mem: MemoryInterface + 'static> Xhci<Mem> {
         Some(result)
     }
 
-    async fn get_device_descriptor(&self, port_data: &mut PortData) {
-        info!("Identifying device at port {}...", port_data.port);
-        let mut data = Box::pin(DeviceDescriptor::default());
-        let trbs = ControlTransferBuilder
-            ::new(self.mem, port_data.max_packet_size as usize)
-            .direction(DataTransferDirection::DeviceToHost)
-            .type_of_request(TypeOfRequest::Standard)
-            .recipient(Recipient::Device)
-            .request(transfer::standard::StandardRequest::GET_DESCRIPTOR)
-            .value(transfer::standard::get_descriptor_value(
-                transfer::standard::DescriptorType::DEVICE,
-                0))
-            .with_data(data.as_mut().get_mut())
-            .build();
-        info!("TRBS: {:X?}", trbs);
-        let response: Option<TransferEventTrb> = self.send_transfer(
-            port_data.slot_id,
-            &mut port_data.transfer_ring,
-            &trbs
-        ).await.try_into().ok();
-        info!("Got device descriptor for port {}: {:X?}", port_data.port, response);
-        info!("Device descriptor: {:X?}", data.as_ref());
-    }
-
     async fn identify_device(&self, port_data: &mut PortData) {
-        self.get_device_descriptor(port_data).await;
+        let data = self.examine_device(port_data).await;
+        if data.is_some() {
+            port_data.info = data;
+        }
     }
 }

@@ -1,40 +1,44 @@
-use core::slice;
+use core::{slice, fmt};
 
-pub struct StandardRequest;
-impl StandardRequest {
-    pub const GET_STATUS: u8 = 0;
-    pub const CLEAR_FEATURE: u8 = 1;
-    pub const SET_FEATURE: u8 = 3;
-    pub const SET_ADDRESS: u8 = 5;
-    pub const GET_DESCRIPTOR: u8 = 6;
-    pub const SET_DESCRIPTOR: u8 = 7;
-    pub const GET_CONFIGURATION: u8 = 8;
-    pub const SET_CONFIGURATION: u8 = 9;
-    pub const GET_INTERFACE: u8 = 10;
-    pub const SET_INTERFACE: u8 = 11;
-    pub const SYNC_FRAME: u8 = 12;
+use alloc::string::{ToString, String};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum StandardRequest {
+    GetStatus = 0,
+    ClearFeature = 1,
+    SetFeature = 3,
+    SetAddress = 5,
+    GetDescriptor = 6,
+    SetDescriptor = 7,
+    GetConfiguration = 8,
+    SetConfiguration = 9,
+    GetInterface = 10,
+    SetInterface = 11,
+    SyncFrame = 12,
 }
 
-pub struct DescriptorType;
-impl DescriptorType {
-    pub const DEVICE: u8 = 1;
-    pub const CONFIGURATION: u8 = 2;
-    pub const STRING: u8 = 3;
-    pub const INTERFACE: u8 = 4;
-    pub const ENDPOINT: u8 = 5;
-    pub const DEVICE_QUALIFIER: u8 = 6;
-    pub const OTHER_SPEED_CONFIGURATION: u8 = 7;
-    pub const INTERFACE_POWER: u8 = 8;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum DescriptorType {
+    Device = 1,
+    Configuration = 2,
+    String = 3,
+    Interface = 4,
+    Endpoint = 5,
+    DeviceQualifier = 6,
+    OtherSpeedConfiguration = 7,
+    InterfacePower = 8,
 }
 
-pub fn get_descriptor_value(descriptor_type: u8, index: u8) -> u16 {
+pub fn get_descriptor_value(descriptor_type: DescriptorType, index: u8) -> u16 {
     (descriptor_type as u16) << 8 | index as u16
 }
 
 #[derive(Debug, Copy, Clone, Default)]
 pub struct StringIndex(pub u8);
 
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct DeviceDescriptor {
     pub length: u8,
@@ -52,3 +56,78 @@ pub struct DeviceDescriptor {
     pub serial_number: StringIndex,
     pub num_configurations: u8,
 }
+
+impl fmt::Debug for DeviceDescriptor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "DeviceDescriptor")?;
+        writeln!(f, "  length: {}", self.length)?;
+        writeln!(f, "  descriptor_type: 0x{:02X}", self.descriptor_type)?;
+        writeln!(f, "  bcd_usb: 0x{:04X}", self.bcd_usb)?;
+        writeln!(f, "  class: 0x{:02X}", self.class)?;
+        writeln!(f, "  subclass: 0x{:02X}", self.subclass)?;
+        writeln!(f, "  protocol: 0x{:02X}", self.protocol)?;
+        writeln!(f, "  max_packet_size: {}", self.max_packet_size)?;
+        writeln!(f, "  vendor: 0x{:04X}", self.vendor)?;
+        writeln!(f, "  product: 0x{:04X}", self.product)?;
+        writeln!(f, "  bcd_device: 0x{:04X}", self.bcd_device)?;
+        writeln!(f, "  manufacturer_index: {:?}", self.manufacturer_index)?;
+        writeln!(f, "  product_index: {:?}", self.product_index)?;
+        writeln!(f, "  serial_number: {:?}", self.serial_number)?;
+        writeln!(f, "  num_configurations: {}", self.num_configurations)?;
+        Ok(())
+    }
+}
+
+#[derive(Copy, Clone, Default)]
+#[repr(C)]
+pub struct ConfigurationDescriptor {
+    pub length: u8,
+    pub descriptor_type: u8,
+    pub total_length: u16,
+    pub num_interfaces: u8,
+    pub configuration_value: u8,
+    pub configuration_index: StringIndex,
+    pub attributes: u8,
+    pub max_power: u8,
+}
+
+impl fmt::Debug for ConfigurationDescriptor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "ConfigurationDescriptor")?;
+        writeln!(f, "  length: {}", self.length)?;
+        writeln!(f, "  descriptor_type: 0x{:02X}", self.descriptor_type)?;
+        writeln!(f, "  total_length: 0x{:04X}", self.total_length)?;
+        writeln!(f, "  num_interfaces: {}", self.num_interfaces)?;
+        writeln!(f, "  configuration_value: 0x{:02X}", self.configuration_value)?;
+        writeln!(f, "  configuration_index: {:?}", self.configuration_index)?;
+        writeln!(f, "  attributes: 0x{:02X}", self.attributes)?;
+        writeln!(f, "  max_power: 0x{:02X}", self.max_power)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+#[repr(C)]
+pub struct StringDescriptor {
+    pub length: u8,
+    pub descriptor_type: u8,
+    pub data: [u16; 127],
+}
+
+impl Default for StringDescriptor {
+    fn default() -> Self {
+        Self { length: 0, descriptor_type: 0, data: [0; 127] }
+    }
+}
+
+impl ToString for StringDescriptor {
+    fn to_string(&self) -> String {
+        let data = &self.data[0..((self.length-2)/2) as usize];
+        String::from_utf16(data).unwrap()
+    }
+}
+
+pub trait Descriptor: Default + Unpin + Clone {}
+impl Descriptor for DeviceDescriptor {}
+impl Descriptor for ConfigurationDescriptor {}
+impl Descriptor for StringDescriptor {}
