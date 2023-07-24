@@ -14,14 +14,13 @@ use futures::future::join_all;
 use log::{info, error};
 use spin::Mutex;
 use tako_async::timer::Timer;
-use x86_64::VirtAddr;
-use x86_64::structures::paging::Translate;
 
-use crate::controller::UsbController;
-use crate::xhci::trb::{EnableSlotCommandTrb, CommandCompletionCode, CommandCompletionEventTrb};
+use crate::controller::{UsbController, MemoryInterface};
+use crate::xhci::trb::{EnableSlotCommandTrb, CompletionCode, CommandCompletionEventTrb, TransferEventTrb};
 
 use self::contexts::{DeviceContext, DeviceContextBaseAddressArray, InputContext};
 use self::transfer::ControlTransferBuilder;
+use self::transfer::standard::DeviceDescriptor;
 use self::trb::{TrbRing, EventRing, Trb, TrbType, DisableSlotCommandTrb, DataTransferDirection, TypeOfRequest, Recipient};
 use self::registers::Registers;
 
@@ -33,26 +32,26 @@ pub struct PortData {
     max_packet_size: u16,
 }
 
-pub struct Xhci<T: Translate + 'static> {
+pub struct Xhci<Mem: MemoryInterface + 'static> {
     pub registers: Registers,
     pub dcbaa: Mutex<Pin<Box<DeviceContextBaseAddressArray>>>,
     pub command_ring: Mutex<TrbRing>,
     pub event_ring: Mutex<EventRing>,
     pub ports_data: Mutex<Vec<PortData>>,
-    pub translator: &'static Mutex<T>,
+    pub mem: &'static Mem,
 
     pending_event_senders: Mutex<BTreeMap<(TrbType, u64), Sender<Trb>>>,
 }
 
-impl<T: Translate> Xhci<T> {
-    pub fn new(pci_base: *mut u8, translator: &'static Mutex<T>) -> Self {
+impl<Mem: MemoryInterface + 'static> Xhci<Mem> {
+    pub fn new(pci_base: *mut u8, mem: &'static Mem) -> Self {
         Self {
             registers: unsafe{Registers::new(pci_base)},
             dcbaa: Mutex::new(Box::pin(DeviceContextBaseAddressArray::new())),
-            command_ring: Mutex::new(TrbRing::new(2, &translator)),
-            event_ring: Mutex::new(EventRing::new(&translator)),
+            command_ring: Mutex::new(TrbRing::new(2, mem)),
+            event_ring: Mutex::new(EventRing::new(mem)),
             ports_data: Mutex::new(Vec::new()),
-            translator,
+            mem,
 
             pending_event_senders: Mutex::new(BTreeMap::new()),
         }
@@ -60,27 +59,27 @@ impl<T: Translate> Xhci<T> {
 }
 
 #[async_trait(?Send)]
-impl<T: Translate> UsbController for Xhci<T> {
+impl<Mem: MemoryInterface + 'static> UsbController for Xhci<Mem> {
     fn initialize(&self) {
         self.registers.operational.config().write(0x10);
 
         let dcbaap = self.dcbaa.lock().as_ref().get_ref() as *const _ as u64;
-        let dcbaap = self.translator.lock().translate_addr(VirtAddr::new(dcbaap)).unwrap();
-        self.registers.operational.dcbaap().write(dcbaap.as_u64());
+        let dcbaap = self.mem.to_physical(dcbaap).unwrap();
+        self.registers.operational.dcbaap().write(dcbaap);
 
         let crdp = self.command_ring.lock().first_trb() as *const _ as u64;
-        let crdp = self.translator.lock().translate_addr(VirtAddr::new(crdp)).unwrap();
-        self.registers.operational.crcr().write(crdp.as_u64() | 0x1);
+        let crdp = self.mem.to_physical(crdp).unwrap();
+        self.registers.operational.crcr().write(crdp | 0x1);
 
         self.registers.runtime.erstsz(0).write(0x1);
 
         let erdp = self.event_ring.lock().first_trb() as *const _ as u64;
-        let erdp = self.translator.lock().translate_addr(VirtAddr::new(erdp)).unwrap();
-        self.registers.runtime.erdp(0).write(erdp.as_u64() | 0x8);
+        let erdp = self.mem.to_physical(erdp).unwrap();
+        self.registers.runtime.erdp(0).write(erdp | 0x8);
 
         let erstba = self.event_ring.lock().segment_table() as *const _ as u64;
-        let erstba = self.translator.lock().translate_addr(VirtAddr::new(erstba)).unwrap();
-        self.registers.runtime.erstba(0).write(erstba.as_u64());
+        let erstba = self.mem.to_physical(erstba).unwrap();
+        self.registers.runtime.erstba(0).write(erstba);
 
         self.registers.operational.usbsts().write(0x0000_0008);
         self.registers.operational.usbcmd().write(0x0000_0001);
@@ -97,6 +96,10 @@ impl<T: Translate> UsbController for Xhci<T> {
             self.initialize_device(port as u8)
         )).await.into_iter().flatten().collect();
         *self.ports_data.lock() = ports;
+
+        join_all(self.ports_data.lock().iter_mut().map(|port_data|
+            self.identify_device(port_data)
+        )).await;
     }
 
     async fn run(&self) {
@@ -104,7 +107,7 @@ impl<T: Translate> UsbController for Xhci<T> {
     }
 }
 
-impl<T:Translate> Xhci<T> {
+impl<Mem: MemoryInterface + 'static> Xhci<Mem> {
     pub fn port_status_change(&self, port: u8) {
         let portsc = self.registers.operational.portsc(port as usize).read();
         info!("Port {} status change: {:08X}", port, portsc);
@@ -118,7 +121,9 @@ impl<T:Translate> Xhci<T> {
             while event_ring.has_event() {
                 let trb = event_ring.current_event();
                 match trb.trb_type() {
-                    TrbType::CommandCompletionEvent | TrbType::PortStatusChangeEvent => {
+                    TrbType::TransferEvent |
+                    TrbType::CommandCompletionEvent |
+                    TrbType::PortStatusChangeEvent => {
                         self.handle_event_notification(trb);
                     }
                     _ => {
@@ -126,22 +131,23 @@ impl<T:Translate> Xhci<T> {
                     }
                 }
                 event_ring.advance();
-                self.registers.runtime.erdp(0).write(event_ring.get_current_addr(self.translator))
+                self.registers.runtime.erdp(0).write(event_ring.get_current_addr(self.mem))
             }
+            drop(event_ring);
             Timer::new(1).await;
         }
     }
 }
 
-impl<T:Translate> Xhci<T> {
+impl<Mem: MemoryInterface + 'static> Xhci<Mem> {
     async fn free_slot(&self, slot: u8) {
         let response: CommandCompletionEventTrb =
             self.send_command(DisableSlotCommandTrb(slot).into()).await.try_into().unwrap();
         match response.code {
-            CommandCompletionCode::Success => {
+            CompletionCode::Success => {
                 info!("Successfully disabled slot {}", slot);
             },
-            CommandCompletionCode::SlotNotEnabledError => {}
+            CompletionCode::SlotNotEnabledError => {}
             _ => {
                 error!("Couldn't disable slot {}: {:?}", slot, response);
             }
@@ -171,7 +177,7 @@ impl<T:Translate> Xhci<T> {
                 .await
                 .try_into()
                 .expect("Couldn't allocate slot");
-        if response.code != CommandCompletionCode::Success {
+        if response.code != CompletionCode::Success {
             error!("Failed to enable slot for port {}: {:X?}", port, response);
             return None;
         }
@@ -203,7 +209,7 @@ impl<T:Translate> Xhci<T> {
             port,
             slot_id,
             max_packet_size,
-            transfer_ring: TrbRing::new(2, &self.translator),
+            transfer_ring: TrbRing::new(2, self.mem),
             device_context: Box::pin(DeviceContext::new()),
         };
 
@@ -211,8 +217,8 @@ impl<T:Translate> Xhci<T> {
         ep.set_ep_type(0x4); // Control
         ep.set_max_packet_size(max_packet_size);
         ep.set_max_burst_size(0);
-        info!("Current dequeue ptr {:08X}", result.transfer_ring.get_current_addr(&self.translator));
-        ep.set_tr_dequeue_ptr(result.transfer_ring.get_current_addr(&self.translator));
+        info!("Current dequeue ptr {:08X}", result.transfer_ring.get_current_addr(self.mem));
+        ep.set_tr_dequeue_ptr(result.transfer_ring.get_current_addr(self.mem));
         ep.set_dcs(true);
         ep.set_interval(0);
         ep.set_max_pstreams(0);
@@ -220,14 +226,13 @@ impl<T:Translate> Xhci<T> {
         ep.set_cerr(3);
 
         let device_context_addr = result.device_context.as_ref().get_ref() as *const _ as u64;
-        let device_context_addr = self.translator.lock()
-            .translate_addr(VirtAddr::new(device_context_addr)).unwrap().as_u64();
+        let device_context_addr = self.mem.to_physical(device_context_addr).unwrap();
 
         self.dcbaa.lock().as_mut().get_mut().0[slot_id as usize] = device_context_addr;
 
         let response: CommandCompletionEventTrb =
             self.send_address_device_command(slot_id, input_context).await.try_into().ok()?;
-        if response.code != CommandCompletionCode::Success {
+        if response.code != CompletionCode::Success {
             error!("Failed to address device for port {}: {:X?}", port, response);
             return None;
         }
@@ -239,21 +244,30 @@ impl<T:Translate> Xhci<T> {
     }
 
     async fn get_device_descriptor(&self, port_data: &mut PortData) {
-        let data = Box::pin(x)
-        // let trbs = ControlTransferBuilder
-        //     ::new(&self.translator, port_data.max_packet_size as usize)
-        //     .direction(DataTransferDirection::DeviceToHost)
-        //     .type_of_request(TypeOfRequest::Standard)
-        //     .recipient(Recipient::Device)
-        //     .request(transfer::standard::StandardRequest::GET_DESCRIPTOR)
-        //     .value(transfer::standard::get_descriptor_value(
-        //         transfer::standard::DescriptorType::DEVICE,
-        //         0))
-        //     .wi
-
+        info!("Identifying device at port {}...", port_data.port);
+        let mut data = Box::pin(DeviceDescriptor::default());
+        let trbs = ControlTransferBuilder
+            ::new(self.mem, port_data.max_packet_size as usize)
+            .direction(DataTransferDirection::DeviceToHost)
+            .type_of_request(TypeOfRequest::Standard)
+            .recipient(Recipient::Device)
+            .request(transfer::standard::StandardRequest::GET_DESCRIPTOR)
+            .value(transfer::standard::get_descriptor_value(
+                transfer::standard::DescriptorType::DEVICE,
+                0))
+            .with_data(data.as_mut().get_mut())
+            .build();
+        info!("TRBS: {:X?}", trbs);
+        let response: Option<TransferEventTrb> = self.send_transfer(
+            port_data.slot_id,
+            &mut port_data.transfer_ring,
+            &trbs
+        ).await.try_into().ok();
+        info!("Got device descriptor for port {}: {:X?}", port_data.port, response);
+        info!("Device descriptor: {:X?}", data.as_ref());
     }
 
     async fn identify_device(&self, port_data: &mut PortData) {
-        
+        self.get_device_descriptor(port_data).await;
     }
 }

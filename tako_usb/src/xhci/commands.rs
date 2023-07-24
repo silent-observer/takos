@@ -3,7 +3,8 @@ use core::{future::Future, pin::Pin, task::{Context, Poll}};
 use alloc::boxed::Box;
 use futures::channel::oneshot::{Receiver, self};
 use log::info;
-use x86_64::{structures::paging::Translate, VirtAddr};
+
+use crate::controller::MemoryInterface;
 
 use super::{trb::{Trb, TrbType, AddressDeviceCommandTrb}, contexts::InputContext};
 use super::Xhci;
@@ -18,12 +19,14 @@ impl Future for PendingEventFuture {
     }
 }
 
-impl<T: Translate> Xhci<T> {
+impl<Mem: MemoryInterface + 'static> Xhci<Mem> {
     pub fn handle_event_notification(&self, trb: &Trb) {
         let addr = trb.parameter;
         let trb_type = trb.trb_type();
         if let Some(sender) = self.pending_event_senders.lock().remove(&(trb_type, addr)) {
             sender.send(*trb).unwrap();
+        } else {
+            info!("No one listened to the event {:X?}", trb);
         }
     }
 
@@ -35,7 +38,7 @@ impl<T: Translate> Xhci<T> {
 
     pub fn send_command(&self, trb: Trb) -> PendingEventFuture {
         let mut command_ring = self.command_ring.lock();
-        let addr = command_ring.get_current_addr(&self.translator);
+        let addr = command_ring.get_current_addr(self.mem);
         let future = self.new_pending_event(TrbType::CommandCompletionEvent, addr);
 
         command_ring.enqueue_trb(trb);
@@ -45,16 +48,12 @@ impl<T: Translate> Xhci<T> {
     }
 
     pub async fn send_address_device_command(&self, slot_id: u8, input_context: Box<InputContext>) -> Trb {
-        let ptr = Box::into_raw(input_context);
-        let addr = self.translator.lock().translate_addr(VirtAddr::new(ptr as u64)).unwrap().as_u64();
+        let (addr, data) = self.mem.allocate(*input_context);
         let trb = AddressDeviceCommandTrb::new(slot_id, addr);
         let trb = trb.into();
         info!("TRB: {:X?}", trb);
         let response = self.send_command(trb).await;
-        // unsafe {
-        //     let b = Box::from_raw(ptr);
-        //     drop(b);
-        // }
+        self.mem.deallocate(data);
         response
     }
 

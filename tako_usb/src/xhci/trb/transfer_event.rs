@@ -3,19 +3,19 @@ use core::mem::transmute;
 use super::{Trb, TrbType, CompletionCode};
 
 #[derive(Debug, Clone, Copy)]
-pub struct CommandCompletionEventTrb {
+pub struct TransferEventTrb {
     pub addr: u64,
     pub code: CompletionCode,
-    pub parameter: u32,
+    pub length: u32,
     pub slot_id: u8,
-    pub vf_id: u8,
+    pub endpoint_id: u8,
 }
 
-impl TryFrom<Trb> for CommandCompletionEventTrb {
+impl TryFrom<Trb> for TransferEventTrb {
     type Error = ();
 
     fn try_from(trb: Trb) -> Result<Self, Self::Error> {
-        if trb.trb_type() != TrbType::CommandCompletionEvent {
+        if trb.trb_type() != TrbType::TransferEvent {
             return Err(());
         }
 
@@ -28,10 +28,9 @@ impl TryFrom<Trb> for CommandCompletionEventTrb {
         Ok(Self {
             addr: trb.parameter,
             code,
-            parameter: trb.status & 0xFFFFFF,
+            length: trb.status & 0xFFFFFF,
             slot_id: (trb.control >> 24) as u8,
-            vf_id: (trb.control >> 16) as u8,
+            endpoint_id: (trb.control >> 16 & 0x1F) as u8,
         })
     }
-
 }

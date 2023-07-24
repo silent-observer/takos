@@ -8,25 +8,27 @@ mod normal;
 mod setup;
 mod data;
 mod status;
+mod transfer_event;
 
 use core::{marker::PhantomPinned, pin::Pin, mem::transmute};
 
 use alloc::{vec::Vec, boxed::Box};
-use spin::Mutex;
-use x86_64::{structures::paging::Translate, VirtAddr};
 
 
 use link::LinkTrb;
 pub use noop_command::NoOpCommandTrb;
 pub use enable_slot_command::EnableSlotCommandTrb;
 pub use disable_slot_command::DisableSlotCommandTrb;
-pub use command_completion_event::{CommandCompletionCode, CommandCompletionEventTrb};
+pub use transfer_event::TransferEventTrb;
+pub use command_completion_event::CommandCompletionEventTrb;
 pub use address_device_command::AddressDeviceCommandTrb;
 
 pub use normal::NormalTrb;
 pub use setup::{SetupTrb, TypeOfRequest, Recipient};
 pub use data::DataTrb;
 pub use status::StatusTrb;
+
+use crate::controller::MemoryInterface;
 
 
 #[derive(Debug, Copy, Clone)]
@@ -75,6 +77,49 @@ pub enum TrbType {
     HostControllerEvent,
     DeviceNotificationEvent,
     MfindexWrapEvent,
+}
+
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum CompletionCode {
+    Invalid = 0,
+    Success,
+    DataBufferError,
+    BabbleDetectedError,
+    UsbTransactionError,
+    TrbError,
+    StallError,
+    ResourceError,
+    BandwidthError,
+    NoSlotsAvailableError,
+    InvalidStreamTypeError,
+    SlotNotEnabledError,
+    EndpointNotEnabledError,
+    ShortPacket,
+    RingUnderrun,
+    RingOverrun,
+    VfEventRingFullError,
+    ParameterError,
+    BandwidthOverrunError,
+    ContextStateError,
+    NoPingResponseError,
+    EventRingFullError,
+    IncompatibleDeviceError,
+    MissedServiceError,
+    CommandRingStopped,
+    CommandAborted,
+    Stopped,
+    StoppedLengthInvalid,
+    StoppedShortPacket,
+    MaxExitLatencyTooLargeError,
+    IsochBufferOverrun = 31,
+    EventLostError,
+    UndefinedError,
+    InvalidStreamIdError,
+    SecondaryBandwidthError,
+    SplitTransactionError,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -154,7 +199,7 @@ pub struct TrbRing {
 }
 
 impl TrbRing {
-    pub fn new(segments: usize, translator: &Mutex<impl Translate>) -> Self {
+    pub fn new(segments: usize, mem: &impl MemoryInterface) -> Self {
         assert!(segments > 0);
         let mut data = Vec::with_capacity(segments);
         for _ in 0..segments {
@@ -162,10 +207,10 @@ impl TrbRing {
         }
         for i in 0..segments {
             let next_index = if i == segments - 1 {0} else {i + 1};
-            let next_virt_addr = VirtAddr::new(&data[next_index].data[0] as *const Trb as u64);
-            let phys_addr = translator.lock().translate_addr(next_virt_addr).unwrap();
+            let next_virt_addr = &data[next_index].data[0] as *const Trb as u64;
+            let phys_addr = mem.to_physical(next_virt_addr).unwrap();
             let last_trb = data[i].as_mut().trb((TRB_RING_SIZE-1) as u8);
-            *last_trb = LinkTrb::new(phys_addr.as_u64(), i == segments - 1).into();
+            *last_trb = LinkTrb::new(phys_addr, i == segments - 1).into();
         }
         Self {
             data,
@@ -175,11 +220,10 @@ impl TrbRing {
         }
     }
 
-    pub fn get_current_addr(&self, translator: &Mutex<impl Translate>) -> u64 {
+    pub fn get_current_addr(&self, mem: &impl MemoryInterface) -> u64 {
         let addr = &self.data[self.enqueue_segment].as_ref().data[self.enqueue_index as usize];
         let addr = addr as *const Trb as u64;
-        let addr = translator.lock().translate_addr(VirtAddr::new(addr)).unwrap();
-        addr.as_u64()
+        mem.to_physical(addr).unwrap()
     }
 
     pub fn enqueue_trb(&mut self, trb: Trb) {
@@ -230,13 +274,13 @@ pub struct EventRing {
 }
 
 impl EventRing {
-    pub fn new(translator: &Mutex<impl Translate>) -> Self {
+    pub fn new(mem: &impl MemoryInterface) -> Self {
         let data = Box::pin(TrbRingSegment::new());
 
 
         let addr = data.as_ref().get_ref() as *const _ as u64;
         let segment_table = ErstEntry{
-            base_addr: translator.lock().translate_addr(VirtAddr::new(addr)).unwrap().as_u64(),
+            base_addr: mem.to_physical(addr).unwrap(),
             size: TRB_RING_SIZE as u16
         };
 
@@ -275,10 +319,9 @@ impl EventRing {
         }
     }
 
-    pub fn get_current_addr(&self, translator: &Mutex<impl Translate>) -> u64 {
+    pub fn get_current_addr(&self, mem: &impl MemoryInterface) -> u64 {
         let addr = &self.data.as_ref().data[self.dequeue_index as usize];
         let addr = addr as *const Trb as u64;
-        let addr = translator.lock().translate_addr(VirtAddr::new(addr)).unwrap();
-        addr.as_u64()
+        mem.to_physical(addr).unwrap()
     }
 }

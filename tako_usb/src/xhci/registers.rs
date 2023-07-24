@@ -1,3 +1,5 @@
+use log::info;
+
 use crate::register_array;
 use crate::register::{Register, RuntimeRegister};
 use crate::register;

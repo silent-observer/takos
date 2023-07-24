@@ -1,3 +1,5 @@
+use core::slice;
+
 pub struct StandardRequest;
 impl StandardRequest {
     pub const GET_STATUS: u8 = 0;
@@ -29,10 +31,10 @@ pub fn get_descriptor_value(descriptor_type: u8, index: u8) -> u16 {
     (descriptor_type as u16) << 8 | index as u16
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct StringIndex(pub u8);
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 #[repr(C)]
 pub struct DeviceDescriptor {
     pub length: u8,

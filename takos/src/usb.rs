@@ -2,10 +2,12 @@ use core::future::{pending, self};
 
 use alloc::boxed::Box;
 use log::info;
+use spin::Mutex;
 use tako_usb::xhci::trb::{Trb, NoOpCommandTrb};
 use tako_usb::{xhci::Xhci, controller::UsbController};
 use takobl_api::PHYSICAL_MEMORY_OFFSET;
 use tako_async::timer::Timer;
+use x86_64::structures::paging::OffsetPageTable;
 
 use crate::paging::PAGE_TABLE;
 use crate::println;
@@ -36,7 +38,7 @@ pub async fn usb_driver(usb_host: PciDevice) {
 
     let mut usb= match usb_host.data.prog_if {
         0x30 => {
-            let xhci = Xhci::new(pci_base as *mut u8, &PAGE_TABLE);
+            let xhci: Xhci<Mutex<OffsetPageTable>> = Xhci::new(pci_base as *mut u8, &PAGE_TABLE);
             info!("caplength={}", xhci.registers.capabilities.cap_length().read());
             info!("hciversion={:04X}", xhci.registers.capabilities.hci_version().read());
             info!("hcsparams1={:08X}", xhci.registers.capabilities.hcs_params_1().read());
