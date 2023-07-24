@@ -148,6 +148,7 @@ impl<Mem: MemoryInterface + 'static> Xhci<Mem> {
         
 
         info!("Got device info for port {}:\n{:X?}", port_data.port, result);
+        info!("!!!");
         Some(result)
     }
 }

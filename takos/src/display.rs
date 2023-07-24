@@ -82,7 +82,7 @@ impl FrameBuffer {
         }
     }
 
-    pub fn scroll_up(&self, offset: usize, fill_color: ColorRGB) {
+    pub fn move_up(&self, offset: usize, fill_color: ColorRGB) {
         assert!(offset < self.height);
         assert!(offset != 0);
         for y in 0..self.height-offset {
@@ -102,6 +102,32 @@ impl FrameBuffer {
                 self.stride * self.height * 4)
         }
         for y in self.height-offset..self.height {
+            for x in 0..self.width {
+                self.put_pixel(x, y, fill_color);
+            }
+        }
+    }
+
+    pub fn move_down(&self, offset: usize, fill_color: ColorRGB) {
+        assert!(offset < self.height);
+        assert!(offset != 0);
+        for y in(offset..self.height).rev() {
+            let dest_index = y * self.stride;
+            let src_index = (y - offset) * self.stride;
+            unsafe{
+                core::ptr::copy_nonoverlapping(
+                    self.double_buffer.add(src_index * 4),
+                    self.double_buffer.add(dest_index * 4),
+                    self.width * 4)
+            }
+        }
+        unsafe{
+            core::ptr::copy_nonoverlapping(
+                self.double_buffer,
+                self.base_addr,
+                self.stride * self.height * 4)
+        }
+        for y in 0..offset {
             for x in 0..self.width {
                 self.put_pixel(x, y, fill_color);
             }
