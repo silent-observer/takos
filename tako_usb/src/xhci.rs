@@ -6,7 +6,6 @@ mod commands;
 use core::pin::Pin;
 
 use alloc::collections::BTreeMap;
-use alloc::vec;
 use alloc::{boxed::Box, vec::Vec};
 use async_trait::async_trait;
 use futures::channel::oneshot::Sender;
@@ -53,95 +52,6 @@ impl<T: Translate> Xhci<T> {
 
             pending_event_senders: Mutex::new(BTreeMap::new()),
         }
-    }
-
-    async fn free_slot(&self, slot: u8) {
-        let response: CommandCompletionEventTrb =
-            self.send_command(DisableSlotCommandTrb(slot).into()).await.try_into().unwrap();
-        match response.code {
-            CommandCompletionCode::Success => {
-                info!("Successfully disabled slot {}", slot);
-            },
-            CommandCompletionCode::SlotNotEnabledError => {}
-            _ => {
-                error!("Couldn't disable slot {}: {:?}", slot, response);
-            }
-        }
-        
-    }
-
-    async fn initialize_device(&self, port: u8) -> Option<PortData> {
-        let portsc = self.registers.operational.portsc(port as usize).read();
-        if portsc & 0x1 == 0 { return None; } // No device
-
-        self.reset_port(port as u8).await;
-        let portsc = self.registers.operational.portsc(port as usize).read();
-        info!("Port {} = {:08X}", port, portsc);
-
-        let port_speed = portsc >> 10 & 0xF;
-        let max_packet_size = match port_speed {
-            1 | 3 => 64,
-            2 => 8,
-            4..=7 => 512,
-            _ => {
-                error!("Unsupported port speed: {}", port_speed);
-                return None;
-            }
-        };
-
-        let slot_id = self.enable_slot(port).await?;
-        info!("Slot enable for port {}: slot_id = {}", port, slot_id);
-
-        let mut input_context = Box::new(InputContext::new());
-        input_context.control_context.add_context_flags = 0x3;
-        input_context.slot_context.set_route_string(0x0);
-        input_context.slot_context.set_speed(port_speed as u8);
-        input_context.slot_context.set_root_hub_port_number(port);
-        input_context.slot_context.set_context_entries(0x1);
-        
-        let result = PortData {
-            port,
-            transfer_ring: TrbRing::new(2, &self.translator),
-            device_context: Box::pin(DeviceContext::new()),
-        };
-
-        let ep = &mut input_context.endpoint_contexts[0];
-        ep.set_ep_type(0x4); // Control
-        ep.set_max_packet_size(max_packet_size);
-        ep.set_max_burst_size(0);
-        info!("Current dequeue ptr {:08X}", result.transfer_ring.get_current_addr(&self.translator));
-        ep.set_tr_dequeue_ptr(result.transfer_ring.get_current_addr(&self.translator));
-        ep.set_dcs(true);
-        ep.set_interval(0);
-        ep.set_max_pstreams(0);
-        ep.set_mult(0);
-        ep.set_cerr(3);
-
-        let device_context_addr = result.device_context.as_ref().get_ref() as *const _ as u64;
-        let device_context_addr = self.translator.lock()
-            .translate_addr(VirtAddr::new(device_context_addr)).unwrap().as_u64();
-
-        self.dcbaa.lock().as_mut().get_mut().0[slot_id as usize] = device_context_addr;
-
-        let response: CommandCompletionEventTrb =
-            self.send_address_device_command(slot_id, input_context).await.try_into().ok()?;
-        info!("Port {} got response {:X?}", port, response);
-
-        Some(result)
-    }
-
-    async fn enable_slot(&self, port: u8) -> Option<u8> {
-        let response: CommandCompletionEventTrb = 
-            self.send_command(EnableSlotCommandTrb.into())
-                .await
-                .try_into()
-                .expect("Couldn't allocate slot");
-        if response.code != CommandCompletionCode::Success {
-            error!("Failed to enable slot for port {}: {:X?}", port, response);
-            return None;
-        }
-
-        Some(response.slot_id)
     }
 }
 
@@ -216,5 +126,109 @@ impl<T:Translate> Xhci<T> {
             }
             Timer::new(1).await;
         }
+    }
+}
+
+impl<T:Translate> Xhci<T> {
+    async fn free_slot(&self, slot: u8) {
+        let response: CommandCompletionEventTrb =
+            self.send_command(DisableSlotCommandTrb(slot).into()).await.try_into().unwrap();
+        match response.code {
+            CommandCompletionCode::Success => {
+                info!("Successfully disabled slot {}", slot);
+            },
+            CommandCompletionCode::SlotNotEnabledError => {}
+            _ => {
+                error!("Couldn't disable slot {}: {:?}", slot, response);
+            }
+        }
+        
+    }
+
+    async fn initialize_device(&self, port: u8) -> Option<PortData> {
+        let portsc = self.registers.operational.portsc(port as usize).read();
+        if portsc & 0x1 == 0 { return None; } // No device
+
+        self.reset_port(port as u8).await;
+        let portsc = self.registers.operational.portsc(port as usize).read();
+        info!("Port {} = {:08X}", port, portsc);
+
+        let slot_id = self.enable_slot(port).await?;
+        info!("Slot enable for port {}: slot_id = {}", port, slot_id);
+
+        let port_data = self.address_device(slot_id, port).await?;
+
+        Some(port_data)
+    }
+
+    async fn enable_slot(&self, port: u8) -> Option<u8> {
+        let response: CommandCompletionEventTrb = 
+            self.send_command(EnableSlotCommandTrb.into())
+                .await
+                .try_into()
+                .expect("Couldn't allocate slot");
+        if response.code != CommandCompletionCode::Success {
+            error!("Failed to enable slot for port {}: {:X?}", port, response);
+            return None;
+        }
+
+        Some(response.slot_id)
+    }
+
+    async fn address_device(&self, slot_id: u8, port: u8) -> Option<PortData> {
+        let portsc = self.registers.operational.portsc(port as usize).read();
+        let port_speed = portsc >> 10 & 0xF;
+        let max_packet_size = match port_speed {
+            1 | 3 => 64,
+            2 => 8,
+            4..=7 => 512,
+            _ => {
+                error!("Unsupported port speed: {}", port_speed);
+                return None;
+            }
+        };
+
+        let mut input_context = Box::new(InputContext::new());
+        input_context.control_context.add_context_flags = 0x3;
+        input_context.slot_context.set_route_string(0x0);
+        input_context.slot_context.set_speed(port_speed as u8);
+        input_context.slot_context.set_root_hub_port_number(port);
+        input_context.slot_context.set_context_entries(0x1);
+        
+        let result = PortData {
+            port,
+            transfer_ring: TrbRing::new(2, &self.translator),
+            device_context: Box::pin(DeviceContext::new()),
+        };
+
+        let ep = &mut input_context.endpoint_contexts[0];
+        ep.set_ep_type(0x4); // Control
+        ep.set_max_packet_size(max_packet_size);
+        ep.set_max_burst_size(0);
+        info!("Current dequeue ptr {:08X}", result.transfer_ring.get_current_addr(&self.translator));
+        ep.set_tr_dequeue_ptr(result.transfer_ring.get_current_addr(&self.translator));
+        ep.set_dcs(true);
+        ep.set_interval(0);
+        ep.set_max_pstreams(0);
+        ep.set_mult(0);
+        ep.set_cerr(3);
+
+        let device_context_addr = result.device_context.as_ref().get_ref() as *const _ as u64;
+        let device_context_addr = self.translator.lock()
+            .translate_addr(VirtAddr::new(device_context_addr)).unwrap().as_u64();
+
+        self.dcbaa.lock().as_mut().get_mut().0[slot_id as usize] = device_context_addr;
+
+        let response: CommandCompletionEventTrb =
+            self.send_address_device_command(slot_id, input_context).await.try_into().ok()?;
+        if response.code != CommandCompletionCode::Success {
+            error!("Failed to address device for port {}: {:X?}", port, response);
+            return None;
+        }
+
+        let context = result.device_context.as_ref().get_ref().slot_context;
+        info!("Slot {} = {:X?}", slot_id, context);
+
+        Some(result)
     }
 }
