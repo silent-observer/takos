@@ -12,7 +12,6 @@ edition = "2021"
 bitflags = "2.3.3"
 spin = "0.9.8"
 takobl_api = { path = "../takobl_api" }
-tako_usb = { path = "../tako_usb" }
 tako_async = { path = "../tako_async" }
 x86_64 = "0.14.10"
 log = "0.4.19"

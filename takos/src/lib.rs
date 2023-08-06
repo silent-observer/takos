@@ -33,7 +33,6 @@ mod gdt;
 mod pic;
 pub mod keyboard;
 mod pci;
-pub mod usb;
 mod log;
 
 pub fn init(boot_data: &BootData) {

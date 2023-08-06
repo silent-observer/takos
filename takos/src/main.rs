@@ -9,7 +9,9 @@ extern crate alloc;
 
 use takobl_api::BootData;
 
-use takos::{println, hlt_loop, keyboard::{keyboard_driver, KeyboardEvent}, usb::{usb_driver, find_usb_host}, console::console_scroll_handler};
+use takos::{println, hlt_loop};
+use takos::keyboard::{keyboard_driver, KeyboardEvent};
+use takos::console::console_scroll_handler;
 use takos::keyboard::get_keyboard_event_receiver;
 use tako_async::{executor::Executor, Task, timer::{timer_executor, Timer}};
 
@@ -81,8 +83,6 @@ pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
     executor.spawn(Task::new(print_numbers()));
     executor.spawn(Task::new(keyboard_driver()));
     executor.spawn(Task::new(console_scroll_handler()));
-    let usb_host = find_usb_host().expect("Couldn't find USB host");
-    executor.spawn(Task::new(usb_driver(usb_host)));
     // let reciever = get_keyboard_event_receiver();
     // executor.spawn(Task::new(print_keyboard_events(reciever)));
     executor.run();
