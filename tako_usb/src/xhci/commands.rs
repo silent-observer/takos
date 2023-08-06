@@ -3,8 +3,9 @@ use core::{future::Future, pin::Pin, task::{Context, Poll}};
 use alloc::boxed::Box;
 use futures::channel::oneshot::{Receiver, self};
 use log::info;
+use tako_async::timer::Timer;
 
-use crate::controller::MemoryInterface;
+use crate::{controller::MemoryInterface};
 
 use super::{trb::{Trb, TrbType, AddressDeviceCommandTrb}, contexts::InputContext};
 use super::Xhci;
@@ -47,9 +48,9 @@ impl<Mem: MemoryInterface + 'static> Xhci<Mem> {
         future
     }
 
-    pub async fn send_address_device_command(&self, slot_id: u8, input_context: Box<InputContext>) -> Trb {
+    pub async fn send_address_device_command(&self, slot_id: u8, input_context: &InputContext, bsr: bool) -> Trb {
         let (addr, data) = self.mem.allocate(*input_context);
-        let trb = AddressDeviceCommandTrb::new(slot_id, addr);
+        let trb = AddressDeviceCommandTrb::new(slot_id, addr, bsr);
         let trb = trb.into();
         info!("TRB: {:X?}", trb);
         let response = self.send_command(trb).await;
@@ -57,14 +58,15 @@ impl<Mem: MemoryInterface + 'static> Xhci<Mem> {
         response
     }
 
-    pub fn reset_port(&self, port: u8) -> PendingEventFuture {
-        let parameter = (port as u64) << 24;
-        let future = self.new_pending_event(TrbType::PortStatusChangeEvent, parameter);
+    pub async fn reset_port(&self, port: u8) {
+        //let parameter = (port as u64) << 24;
+        //let future = self.new_pending_event(TrbType::PortStatusChangeEvent, parameter);
 
         let portsc = self.registers.operational.portsc(port as usize).read();
         let write_portsc = portsc & 0xC3E0 | 0x10;
         self.registers.operational.portsc(port as usize).write(write_portsc);
 
-        future
+        Timer::new(2).await;
+        //future
     }
 }

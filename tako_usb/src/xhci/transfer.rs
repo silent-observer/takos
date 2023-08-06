@@ -1,11 +1,11 @@
 pub mod standard;
 
 use alloc::vec::Vec;
-use log::info;
+use tako_async::timer::Timer;
 
 use crate::controller::MemoryInterface;
 
-use super::{trb::{DataTransferDirection, Trb, DataTrb, NormalTrb, TypeOfRequest, Recipient, SetupTrb, StatusTrb, TrbRing, TrbType}, Xhci, commands::PendingEventFuture};
+use super::{trb::{DataTransferDirection, Trb, DataTrb, NormalTrb, TypeOfRequest, Recipient, SetupTrb, StatusTrb, TrbRing, TrbType, NoOpTrb}, Xhci, commands::PendingEventFuture};
 
 fn construct_data_td<T>(data: &T, dir: DataTransferDirection, max_packet_size: usize, mem: &impl MemoryInterface) -> Vec<Trb>
 where
@@ -158,8 +158,8 @@ where
 }
 
 impl<Mem: MemoryInterface + 'static> Xhci<Mem> {
-    pub fn send_transfer(&self, slot_id: u8, transfer_ring: &mut TrbRing, trbs: &[Trb]) -> PendingEventFuture {
-        let event_ring = self.event_ring.lock();
+    pub async fn send_transfer(&self, slot_id: u8, transfer_ring: &mut TrbRing, trbs: &[Trb]) -> Trb {
+        //let event_ring = self.event_ring.lock();
         let (last_trb, other_trbs) = trbs.split_last().unwrap();
         for trb in other_trbs {
             transfer_ring.enqueue_trb(*trb);
@@ -168,8 +168,21 @@ impl<Mem: MemoryInterface + 'static> Xhci<Mem> {
         let future = self.new_pending_event(TrbType::TransferEvent, addr);
 
         transfer_ring.enqueue_trb(*last_trb);
+        //transfer_ring.enqueue_trb(trbs[0]);
         self.registers.doorbell.ring_device_control(slot_id);
-        drop(event_ring);
-        future
+        //drop(event_ring);
+        future.await
+    }
+
+    pub async fn send_noop_transfer(&self, slot_id: u8, transfer_ring: &mut TrbRing) -> Trb {
+        //let event_ring = self.event_ring.lock();
+        let addr = transfer_ring.get_current_addr(self.mem);
+        let future = self.new_pending_event(TrbType::TransferEvent, addr);
+        
+        transfer_ring.enqueue_trb(NoOpTrb.into());
+        //transfer_ring.enqueue_trb(trbs[0]);
+        self.registers.doorbell.ring_device_control(slot_id);
+        //drop(event_ring);
+        future.await
     }
 }

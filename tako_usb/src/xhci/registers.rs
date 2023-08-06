@@ -87,6 +87,7 @@ impl DoorbellRegisters {
 
     pub fn ring_device_control(&self, slot_id: u8) {
         unsafe{RuntimeRegister::<u32>::new(self.base, slot_id as usize * 0x4).write(0x1)};
+        info!("Rang device control for slot {}...", slot_id);
     }
 }
 

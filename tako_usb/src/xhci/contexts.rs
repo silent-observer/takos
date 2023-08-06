@@ -87,6 +87,7 @@ impl DeviceContextBaseAddressArray {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct InputControlContext {
     pub drop_context_flags: u32,
@@ -112,6 +113,7 @@ impl InputControlContext {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 #[repr(C, align(64))]
 pub struct InputContext {
     pub control_context: InputControlContext,

@@ -1,4 +1,4 @@
-use core::{slice, fmt};
+use core::{fmt, mem::transmute};
 
 use alloc::string::{ToString, String};
 
@@ -106,6 +106,90 @@ impl fmt::Debug for ConfigurationDescriptor {
     }
 }
 
+impl ConfigurationDescriptor {
+    pub unsafe fn from_slice(data: &[u8]) -> Self {
+        unsafe {
+            let addr: *const Self = transmute(data.as_ptr());
+            assert_eq!((*addr).descriptor_type, DescriptorType::Configuration as u8);
+            *addr
+        }
+    }
+}
+
+#[derive(Copy, Clone, Default)]
+#[repr(C)]
+pub struct InterfaceDescriptor {
+    pub length: u8,
+    pub descriptor_type: u8,
+    pub interface_number: u8,
+    pub alternate_setting: u8,
+    pub num_endpoints: u8,
+    pub class: u8,
+    pub subclass: u8,
+    pub protocol: u8,
+    pub interface_index: StringIndex,
+}
+
+impl fmt::Debug for InterfaceDescriptor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "InterfaceDescriptor")?;
+        writeln!(f, "  length: {}", self.length)?;
+        writeln!(f, "  descriptor_type: 0x{:02X}", self.descriptor_type)?;
+        writeln!(f, "  interface_number: {}", self.interface_number)?;
+        writeln!(f, "  alternate_setting: {}", self.alternate_setting)?;
+        writeln!(f, "  num_endpoints: {}", self.num_endpoints)?;
+        writeln!(f, "  class: 0x{:02X}", self.class)?;
+        writeln!(f, "  subclass: 0x{:02X}", self.subclass)?;
+        writeln!(f, "  protocol: 0x{:02X}", self.protocol)?;
+        writeln!(f, "  interface_index: {:?}", self.interface_index)?;
+        Ok(())
+    }
+}
+
+impl InterfaceDescriptor {
+    pub unsafe fn from_slice(data: &[u8]) -> Self {
+        unsafe {
+            let addr: *const Self = transmute(data.as_ptr());
+            assert_eq!((*addr).descriptor_type, DescriptorType::Interface as u8);
+            *addr
+        }
+    }
+}
+
+#[derive(Copy, Clone, Default)]
+#[repr(C)]
+pub struct EndpointDescriptor {
+    pub length: u8,
+    pub descriptor_type: u8,
+    pub endpoint_address: u8,
+    pub attributes: u8,
+    pub max_packet_size: u16,
+    pub interval: u8
+}
+
+impl EndpointDescriptor {
+    pub unsafe fn from_slice(data: &[u8]) -> Self {
+        unsafe {
+            let addr: *const Self = transmute(data.as_ptr());
+            assert_eq!((*addr).descriptor_type, DescriptorType::Endpoint as u8);
+            *addr
+        }
+    }
+}
+
+impl fmt::Debug for EndpointDescriptor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "EndpointDescriptor")?;
+        writeln!(f, "  length: {}", self.length)?;
+        writeln!(f, "  descriptor_type: 0x{:02X}", self.descriptor_type)?;
+        writeln!(f, "  endpoint_address: 0x{:02X}", self.endpoint_address)?;
+        writeln!(f, "  attributes: 0x{:02X}", self.attributes)?;
+        writeln!(f, "  max_packet_size: {}", self.max_packet_size)?;
+        writeln!(f, "  interval: {}", self.interval)?;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
 pub struct StringDescriptor {
@@ -130,4 +214,6 @@ impl ToString for StringDescriptor {
 pub trait Descriptor: Default + Unpin + Clone {}
 impl Descriptor for DeviceDescriptor {}
 impl Descriptor for ConfigurationDescriptor {}
+impl Descriptor for InterfaceDescriptor {}
+impl Descriptor for EndpointDescriptor {}
 impl Descriptor for StringDescriptor {}

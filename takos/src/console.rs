@@ -141,20 +141,6 @@ pub fn init_writer(frame_buffer: FrameBuffer) {
     *WRITER.lock() = ConsoleWriter::new(frame_buffer);
 }
 
-pub async fn console_scroll_handler() {
-    let keyboard_event_reciever = keyboard::get_keyboard_event_receiver();
-    while let Some(event) = keyboard_event_reciever.recv().await {
-        if event.state != KeyState::Pressed {continue;}
-        match event.key {
-            KeyCode::UpArrow => WRITER.lock().scroll_up(),
-            KeyCode::DownArrow => WRITER.lock().scroll_down(),
-            KeyCode::PageUp => WRITER.lock().page_up(),
-            KeyCode::PageDown => WRITER.lock().page_down(),
-            _ => {}
-        }
-    }
-}
-
 impl Write for ConsoleWriter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         for byte in s.bytes() {
@@ -186,4 +172,22 @@ macro_rules! println {
     ($($arg:tt)*) => {{
         $crate::print!("{}\n", format_args!($($arg)*));
     }};
+}
+
+
+
+pub async fn console_scroll_handler() {
+    let keyboard_event_reciever = keyboard::get_keyboard_event_receiver();
+    while let Some(event) = keyboard_event_reciever.recv().await {
+        if event.state != KeyState::Pressed {continue;}
+        match event.key {
+            KeyCode::UpArrow | KeyCode::W => WRITER.lock().scroll_up(),
+            KeyCode::DownArrow | KeyCode::S => WRITER.lock().scroll_down(),
+            KeyCode::PageUp => WRITER.lock().page_up(),
+            KeyCode::PageDown => WRITER.lock().page_down(),
+            _ => {
+                println!("{:?}", event);
+            }
+        }
+    }
 }

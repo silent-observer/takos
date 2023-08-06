@@ -9,6 +9,7 @@ mod setup;
 mod data;
 mod status;
 mod transfer_event;
+mod noop;
 
 use core::{marker::PhantomPinned, pin::Pin, mem::transmute};
 
@@ -16,6 +17,7 @@ use alloc::{vec::Vec, boxed::Box};
 
 
 use link::LinkTrb;
+use log::info;
 pub use noop_command::NoOpCommandTrb;
 pub use enable_slot_command::EnableSlotCommandTrb;
 pub use disable_slot_command::DisableSlotCommandTrb;
@@ -23,10 +25,12 @@ pub use transfer_event::TransferEventTrb;
 pub use command_completion_event::CommandCompletionEventTrb;
 pub use address_device_command::AddressDeviceCommandTrb;
 
+
 pub use normal::NormalTrb;
 pub use setup::{SetupTrb, TypeOfRequest, Recipient};
 pub use data::DataTrb;
 pub use status::StatusTrb;
+pub use noop::NoOpTrb;
 
 use crate::controller::MemoryInterface;
 
@@ -226,14 +230,15 @@ impl TrbRing {
         mem.to_physical(addr).unwrap()
     }
 
-    pub fn enqueue_trb(&mut self, trb: Trb) {
-        let old_trb = self.data[self.enqueue_segment].as_mut().trb(self.enqueue_index);
-        *old_trb = trb;
+    pub fn enqueue_trb(&mut self, mut trb: Trb) {
+        trb.control |= 0x20;
         if self.cycle_state {
-            old_trb.control |= 0x1;
+            trb.control |= 0x1;
         } else {
-            old_trb.control &= !0x1;
+            trb.control &= !0x1;
         }
+        info!("TRB <- {:X?}", trb);
+        *self.data[self.enqueue_segment].as_mut().trb(self.enqueue_index) = trb;
         
         self.enqueue_index += 1;
         if self.enqueue_index as usize == TRB_RING_SIZE - 1 {

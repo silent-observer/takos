@@ -11,6 +11,9 @@ qemu-system-x86_64-debug-xhci \
     -drive if=pflash,format=raw,readonly=on,file=/usr/share/qemu/ovmf-x86_64-vars.bin \
     -device qemu-xhci,p2=8,p3=4,id=xhci \
     -drive id=pendrive,file=fat:rw:esp,format=raw,if=none \
-    -device usb-storage,drive=pendrive,pcap=usb.pcap,bus=xhci.0,port=5 \
+    # -device usb-host,vendorid=0x0951,productid=0x1617,bus=xhci.0,port=5,pcap=usb.pcap \
+    # -device usb-host,vendorid=0x046d,productid=0xc05a,bus=xhci.0,port=7 \
+    # -device usb-host,vendorid=0x256c,productid=0x006d,bus=xhci.0,port=8 \
+    -device usb-storage,drive=pendrive,pcap=usb.pcap,bus=xhci.0,port=6 \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
     $argv[2..-1]
