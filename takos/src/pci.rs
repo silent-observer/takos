@@ -2,6 +2,7 @@ use core::fmt::Display;
 
 use alloc::vec::Vec;
 use alloc::vec;
+use log::{info, error};
 use spin::Mutex;
 use x86_64::instructions::port::Port;
 
@@ -15,43 +16,44 @@ struct PciDeviceHandle {
 }
 
 #[derive(Debug, Copy, Clone)]
-struct PciDeviceData {
-    vendor_id: u16,
-    device_id: u16,
-    class_code: u8,
-    subclass_code: u8,
-    prog_if: u8,
-    revision_id: u8,
+pub struct PciDeviceData {
+    pub vendor_id: u16,
+    pub device_id: u16,
+    pub class_code: u8,
+    pub subclass_code: u8,
+    pub prog_if: u8,
+    pub revision_id: u8,
 }
 
 #[derive(Debug, Copy, Clone)]
-enum BaseAddressRegister {
+pub enum BaseAddressRegister {
     Memory(u64),
     Io(u64),
 }
 
 #[derive(Debug, Clone)]
-struct Header0 {
-    bars: [BaseAddressRegister; 6]
+pub struct Header0 {
+    pub bars: [BaseAddressRegister; 6]
 }
 #[derive(Debug, Clone)]
-struct Header1 {}
+pub struct Header1 {}
 #[derive(Debug, Clone)]
-struct Header2 {}
+pub struct Header2 {}
 
 #[derive(Debug, Clone)]
-enum Header {
+pub enum Header {
     Header0(Header0),
     Header1(Header1),
     Header2(Header2),
+    Unknown(u8)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PciDevice {
     handle: PciDeviceHandle,
-    data: PciDeviceData,
+    pub data: PciDeviceData,
     is_multifunction: bool,
-    header: Header
+    pub header: Header
 }
 
 impl PciDeviceHandle {
@@ -100,7 +102,7 @@ impl PciDeviceHandle {
     }
 
     fn header_type(&self) -> u8 {
-        self.config_read(0x0C) as u8
+        (self.config_read(0x0C) >> 16) as u8
     }
 
     pub fn exists(&self) -> bool {
@@ -151,7 +153,10 @@ impl PciDeviceHandle {
             },
             0x01 => Header::Header1(Header1 {}),
             0x02 => Header::Header2(Header2 {}),
-            _ => panic!("Unknown header type: {:02X}", header_type),
+            _ => {
+                error!("Unknown header type: {:02X}", header_type);
+                Header::Unknown(header_type)
+            }
         };
         (is_multifunction, header)
     }
@@ -176,7 +181,7 @@ impl PciDeviceHandle {
         if is_bus {
             let secondary_bus_number = (self.config_read(0x18) >> 8) as u8;
             let secondary_bus = PciDeviceHandle::new_bus(secondary_bus_number);
-            result.append(&mut secondary_bus.enumerate_device());
+            result.append(&mut secondary_bus.enumerate_bus());
         }
         result
     }
@@ -246,6 +251,7 @@ impl Display for Header {
             }
             Header::Header1(_) => write!(f, "Header1"),
             Header::Header2(_) => write!(f, "Header2"),
+            Header::Unknown(x) => write!(f, "Unknown({:02X})", x),
             
         }
         
@@ -273,6 +279,6 @@ pub static PCI_DEVICES: Mutex<Vec<PciDevice>> = Mutex::new(Vec::new());
 pub fn init_pci() {
     *PCI_DEVICES.lock() = enumerate_all();
     for device in PCI_DEVICES.lock().iter() {
-        println!("Found device {}", device);
+        info!("Found device {}", device);
     }
 }

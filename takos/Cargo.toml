@@ -12,7 +12,9 @@ edition = "2021"
 bitflags = "2.3.3"
 spin = "0.9.8"
 takobl_api = { path = "../takobl_api" }
+tako_async = { path = "../tako_async" }
 x86_64 = "0.14.10"
+log = "0.4.19"
 
 [dependencies.lazy_static]
 version = "1.4.0"
@@ -23,7 +25,7 @@ version = "0.1.4"
 default-features = false
 features = ["alloc", "static"]
 
-[dependencies.futures-util]
+[dependencies.futures]
 version = "0.3.28"
 default-features = false
 features = ["alloc"]

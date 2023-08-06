@@ -47,6 +47,7 @@ extern "x86-interrupt" fn gpf_handler(stack_frame: InterruptStackFrame, error_co
 }
 
 extern "x86-interrupt" fn timer_handler(_stack_frame: InterruptStackFrame) {
+    tako_async::timer::tick();
     //print!(".");
     PICS.lock().notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
 }

@@ -1,5 +1,6 @@
 use core::{alloc::{GlobalAlloc, Layout}, ptr::null_mut};
 
+use log::info;
 use spin::{Mutex, MutexGuard};
 use x86_64::structures::paging::FrameAllocator;
 
@@ -13,7 +14,7 @@ const BLOCK_SIZES: &[u64] = &[8, 16, 32, 64, 128, 256, 512, 1024, 2048];
 const BLOCK_COUNTS: &[u64] = &[512, 256, 128, 64, 32, 16, 8, 4, 2];
 
 const HEAP_START: u64 = 0xFFFF_D000_0000_0000;
-const HEAP_SIZE: u64 = 1024 * 1024;
+const HEAP_SIZE: u64 = 128 * 1024 * 1024;
 const HEAP_END: u64 = HEAP_START + HEAP_SIZE;
 
 struct FreeListNode {
@@ -115,6 +116,7 @@ impl BlockAllocator {
     }
 
     unsafe fn alloc(&mut self, layout: Layout) -> *mut u8 {
+        // info!("Allocating {:?}", layout);
         assert!(layout.align() <= 2048);
         let addr = if layout.size() > 2048 {
             let pages = (layout.size() + 0xFFF) / 0x1000;
@@ -133,6 +135,7 @@ impl BlockAllocator {
     }
 
     unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
+        // info!("Deallocating {:?}", layout);
         assert!(layout.align() <= 2048);
 
         if layout.size() > 2048 {

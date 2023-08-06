@@ -9,8 +9,12 @@ extern crate alloc;
 
 use takobl_api::BootData;
 
-use takos::{println, hlt_loop, async_task::{executor::Executor, Task}, keyboard::{keyboard_driver, KeyboardEvent}};
+use takos::{println, hlt_loop};
+use takos::keyboard::{keyboard_driver, KeyboardEvent};
+use takos::console::console_scroll_handler;
 use takos::keyboard::get_keyboard_event_receiver;
+use tako_async::{executor::Executor, Task, timer::{timer_executor, Timer}};
+
 use thingbuf::mpsc::Receiver;
 
 // This function is called on panic.
@@ -43,9 +47,11 @@ const CAT: &str = r"
     |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
     |  |  |  |  |  |  |  |  |  |  |  |  |  |  |";
 
-async fn print_number() {
-    println!("async number: 42");
-
+async fn print_numbers() {
+    for i in 0..100 {
+        println!("async number: {}", i);
+        Timer::new(10).await;
+    }
 }
 
 async fn print_keyboard_events(receiver: Receiver<KeyboardEvent>) {
@@ -73,10 +79,12 @@ pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
     }
 
     let mut executor = Executor::new();
-    executor.spawn(Task::new(print_number()));
+    executor.spawn(Task::new(timer_executor()));
+    executor.spawn(Task::new(print_numbers()));
     executor.spawn(Task::new(keyboard_driver()));
-    let reciever = get_keyboard_event_receiver();
-    executor.spawn(Task::new(print_keyboard_events(reciever)));
+    executor.spawn(Task::new(console_scroll_handler()));
+    // let reciever = get_keyboard_event_receiver();
+    // executor.spawn(Task::new(print_keyboard_events(reciever)));
     executor.run();
 
     // println!("Allocating more memory!");

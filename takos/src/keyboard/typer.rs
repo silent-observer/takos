@@ -18,10 +18,10 @@ bitflags! {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct KeyboardEvent {
-    c: Option<char>,
-    key: KeyCode,
-    state: KeyState,
-    modifiers: ModifierKeys,
+    pub c: Option<char>,
+    pub key: KeyCode,
+    pub state: KeyState,
+    pub modifiers: ModifierKeys,
 }
 
 pub struct TyperState {

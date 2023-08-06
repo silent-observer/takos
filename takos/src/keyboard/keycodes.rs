@@ -1,5 +1,3 @@
-use core::default;
-
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(u8)]
 pub enum KeyCode {

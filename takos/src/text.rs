@@ -28,7 +28,12 @@ impl FrameBuffer {
     }
 
     #[inline]
-    pub fn text_scroll_up(&self, offset: usize, fill_color: ColorRGB) {
-        self.scroll_up(offset * GLYPH_HEIGHT, fill_color);
+    pub fn text_move_up(&self, offset: usize, fill_color: ColorRGB) {
+        self.move_up(offset * GLYPH_HEIGHT, fill_color);
+    }
+
+    #[inline]
+    pub fn text_move_down(&self, offset: usize, fill_color: ColorRGB) {
+        self.move_down(offset * GLYPH_HEIGHT, fill_color);
     }
 }

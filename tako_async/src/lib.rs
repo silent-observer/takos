@@ -1,9 +1,14 @@
+#![no_std]
+
+extern crate alloc;
+
 use core::{pin::Pin, task::{Context, Poll}};
 
 use alloc::boxed::Box;
 use futures_util::Future;
 
 pub mod executor;
+pub mod timer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 struct TaskId(u64);

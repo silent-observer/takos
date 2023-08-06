@@ -1,9 +1,8 @@
-use alloc::{vec::Vec, boxed::Box};
-use futures_util::{StreamExt, future::join_all};
+use alloc::vec::Vec;
+use futures::{StreamExt, future::join_all};
 use spin::Mutex;
 use thingbuf::mpsc::{Sender, Receiver, self};
 
-use crate::println;
 
 use super::{keycodes::{KeyCode, KeyState}, driver::ScancodeStream, typer::{TyperState, KeyboardEvent}};
 
