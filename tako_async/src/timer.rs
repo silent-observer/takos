@@ -1,7 +1,11 @@
-use core::{sync::atomic::{AtomicU64, Ordering}, pin::Pin, task::{Context, Poll}};
+use core::{
+    pin::Pin,
+    sync::atomic::{AtomicU64, Ordering},
+    task::{Context, Poll},
+};
 
-use alloc::{vec::Vec, collections::BTreeMap};
-use futures_util::{task::AtomicWaker, Stream, StreamExt, Future};
+use alloc::{collections::BTreeMap, vec::Vec};
+use futures_util::{task::AtomicWaker, Future, Stream, StreamExt};
 use spin::Mutex;
 use thingbuf::StaticThingBuf;
 
@@ -16,7 +20,9 @@ static WAKER: AtomicWaker = AtomicWaker::new();
 fn new_timer_id(delay: u64) -> TimerId {
     let id = TIMER_ID.fetch_add(1, Ordering::Relaxed);
     let current_time = TIMER_COUNT.load(Ordering::Relaxed);
-    TIMER_REGISTER_QUEUE.push((id, current_time + delay)).unwrap();
+    TIMER_REGISTER_QUEUE
+        .push((id, current_time + delay))
+        .unwrap();
     id
 }
 

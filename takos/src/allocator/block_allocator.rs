@@ -1,4 +1,7 @@
-use core::{alloc::{GlobalAlloc, Layout}, ptr::null_mut};
+use core::{
+    alloc::{GlobalAlloc, Layout},
+    ptr::null_mut,
+};
 
 use log::info;
 use spin::{Mutex, MutexGuard};
@@ -7,8 +10,6 @@ use x86_64::structures::paging::FrameAllocator;
 use crate::paging::map_writable_page;
 
 use super::frame_allocator::FRAME_ALLOCATOR;
-
-
 
 const BLOCK_SIZES: &[u64] = &[8, 16, 32, 64, 128, 256, 512, 1024, 2048];
 const BLOCK_COUNTS: &[u64] = &[512, 256, 128, 64, 32, 16, 8, 4, 2];
@@ -22,7 +23,7 @@ struct FreeListNode {
 }
 
 struct FreeList {
-    first: Option<&'static mut FreeListNode>
+    first: Option<&'static mut FreeListNode>,
 }
 pub struct BlockAllocator {
     next_page_addr: u64,
@@ -45,7 +46,7 @@ impl BlockAllocator {
             if self.next_page_addr >= HEAP_END {
                 return None;
             }
-            
+
             let addr = self.next_page_addr;
             let frame = FRAME_ALLOCATOR.lock().allocate_frame()?;
             map_writable_page(addr, frame);
@@ -67,7 +68,7 @@ impl BlockAllocator {
         let mut prev_addr = self.free_lists[size_index].first.take();
         for i in (0..block_count).rev() {
             let block_addr = page + i * block_size;
-            unsafe{
+            unsafe {
                 let new_node = block_addr as *mut FreeListNode;
                 core::ptr::write(new_node, FreeListNode { next: prev_addr });
                 prev_addr = Some(new_node.as_mut().unwrap());
@@ -90,13 +91,13 @@ impl BlockAllocator {
     }
 
     fn deallocate_block(&mut self, size_index: usize, block_addr: u64) {
-        let node = unsafe{(block_addr as *mut FreeListNode).as_mut().unwrap()};
+        let node = unsafe { (block_addr as *mut FreeListNode).as_mut().unwrap() };
         node.next = self.free_lists[size_index].first.take();
         self.free_lists[size_index].first = Some(node);
     }
 
     fn deallocate_page(&mut self, page_addr: u64) {
-        let node = unsafe{(page_addr as *mut FreeListNode).as_mut().unwrap()};
+        let node = unsafe { (page_addr as *mut FreeListNode).as_mut().unwrap() };
         node.next = self.page_free_list.first.take();
         self.page_free_list.first = Some(node);
     }

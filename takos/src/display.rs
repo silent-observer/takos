@@ -4,9 +4,15 @@ pub struct ColorRGB(u8, u8, u8);
 use core::ptr::null_mut;
 
 use takobl_api::FrameBufferData;
-use x86_64::{VirtAddr, structures::paging::{PhysFrame, Size4KiB, FrameAllocator}, PhysAddr};
+use x86_64::{
+    structures::paging::{FrameAllocator, PhysFrame, Size4KiB},
+    PhysAddr, VirtAddr,
+};
 
-use crate::{paging::{PAGE_TABLE, map_writable_page}, allocator::frame_allocator::FRAME_ALLOCATOR};
+use crate::{
+    allocator::frame_allocator::FRAME_ALLOCATOR,
+    paging::{map_writable_page, PAGE_TABLE},
+};
 
 #[derive(Debug)]
 pub struct FrameBuffer {
@@ -50,14 +56,17 @@ impl FrameBuffer {
             let phys = physical_address as u64 + i * 4096;
             unsafe {
                 let page = Page::<Size4KiB>::from_start_address(VirtAddr::new(virt)).unwrap();
-                PAGE_TABLE.lock().map_to(
-                    page,
-                    PhysFrame::from_start_address(PhysAddr::new(phys)).unwrap(), 
-                    flags,
-                    &mut *FRAME_ALLOCATOR.lock()
-                ).unwrap().flush();
+                PAGE_TABLE
+                    .lock()
+                    .map_to(
+                        page,
+                        PhysFrame::from_start_address(PhysAddr::new(phys)).unwrap(),
+                        flags,
+                        &mut *FRAME_ALLOCATOR.lock(),
+                    )
+                    .unwrap()
+                    .flush();
             }
-
         }
         for i in 0..pages {
             let virt = VIRTUAL_ADDRESS_DOUBLE + i * 4096;
@@ -85,23 +94,25 @@ impl FrameBuffer {
     pub fn move_up(&self, offset: usize, fill_color: ColorRGB) {
         assert!(offset < self.height);
         assert!(offset != 0);
-        for y in 0..self.height-offset {
+        for y in 0..self.height - offset {
             let dest_index = y * self.stride;
             let src_index = (y + offset) * self.stride;
-            unsafe{
+            unsafe {
                 core::ptr::copy_nonoverlapping(
                     self.double_buffer.add(src_index * 4),
                     self.double_buffer.add(dest_index * 4),
-                    self.width * 4)
+                    self.width * 4,
+                )
             }
         }
-        unsafe{
+        unsafe {
             core::ptr::copy_nonoverlapping(
                 self.double_buffer,
                 self.base_addr,
-                self.stride * self.height * 4)
+                self.stride * self.height * 4,
+            )
         }
-        for y in self.height-offset..self.height {
+        for y in self.height - offset..self.height {
             for x in 0..self.width {
                 self.put_pixel(x, y, fill_color);
             }
@@ -111,21 +122,23 @@ impl FrameBuffer {
     pub fn move_down(&self, offset: usize, fill_color: ColorRGB) {
         assert!(offset < self.height);
         assert!(offset != 0);
-        for y in(offset..self.height).rev() {
+        for y in (offset..self.height).rev() {
             let dest_index = y * self.stride;
             let src_index = (y - offset) * self.stride;
-            unsafe{
+            unsafe {
                 core::ptr::copy_nonoverlapping(
                     self.double_buffer.add(src_index * 4),
                     self.double_buffer.add(dest_index * 4),
-                    self.width * 4)
+                    self.width * 4,
+                )
             }
         }
-        unsafe{
+        unsafe {
             core::ptr::copy_nonoverlapping(
                 self.double_buffer,
                 self.base_addr,
-                self.stride * self.height * 4)
+                self.stride * self.height * 4,
+            )
         }
         for y in 0..offset {
             for x in 0..self.width {
@@ -161,10 +174,6 @@ impl FrameBuffer {
 
 impl ColorRGB {
     pub fn from_hex(hex: u32) -> ColorRGB {
-        ColorRGB(
-            (hex >> 16) as u8,
-            (hex >> 8) as u8,
-            hex as u8,
-        )
+        ColorRGB((hex >> 16) as u8, (hex >> 8) as u8, hex as u8)
     }
 }

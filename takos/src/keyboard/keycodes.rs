@@ -1,7 +1,8 @@
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(u8)]
 pub enum KeyCode {
-    Escape = 0x00, #[default]
+    Escape = 0x00,
+    #[default]
     F1,
     F2,
     F3,
@@ -109,11 +110,12 @@ pub enum KeyCode {
     DownArrow,
     RightArrow,
     NumPad0,
-    NumPadPeriod
+    NumPadPeriod,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum KeyState {
-    Released, #[default]
+    Released,
+    #[default]
     Pressed,
 }

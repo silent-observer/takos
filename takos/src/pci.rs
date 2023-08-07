@@ -1,8 +1,8 @@
 use core::fmt::Display;
 
-use alloc::vec::Vec;
 use alloc::vec;
-use log::{info, error};
+use alloc::vec::Vec;
+use log::{error, info};
 use spin::Mutex;
 use x86_64::instructions::port::Port;
 
@@ -33,7 +33,7 @@ pub enum BaseAddressRegister {
 
 #[derive(Debug, Clone)]
 pub struct Header0 {
-    pub bars: [BaseAddressRegister; 6]
+    pub bars: [BaseAddressRegister; 6],
 }
 #[derive(Debug, Clone)]
 pub struct Header1 {}
@@ -45,7 +45,7 @@ pub enum Header {
     Header0(Header0),
     Header1(Header1),
     Header2(Header2),
-    Unknown(u8)
+    Unknown(u8),
 }
 
 #[derive(Debug, Clone)]
@@ -53,7 +53,7 @@ pub struct PciDevice {
     handle: PciDeviceHandle,
     pub data: PciDeviceData,
     is_multifunction: bool,
-    pub header: Header
+    pub header: Header,
 }
 
 impl PciDeviceHandle {
@@ -90,11 +90,11 @@ impl PciDeviceHandle {
         assert!(address & 0x3 == 0);
         let mut address_port = Port::<u32>::new(0xCF8);
         let mut data_port = Port::<u32>::new(0xCFC);
-        let address_value = 0x80000000 |
-            (self.bus_number as u32) << 16 |
-            (self.device_number.unwrap_or(0) as u32) << 11 |
-            (self.function_number.unwrap_or(0) as u32) << 8 |
-            (address as u32);
+        let address_value = 0x80000000
+            | (self.bus_number as u32) << 16
+            | (self.device_number.unwrap_or(0) as u32) << 11
+            | (self.function_number.unwrap_or(0) as u32) << 8
+            | (address as u32);
         unsafe {
             address_port.write(address_value);
             data_port.read()
@@ -141,7 +141,8 @@ impl PciDeviceHandle {
                             bars[i as usize] = BaseAddressRegister::Memory(addr);
                             i += 1;
                         } else {
-                            bars[i as usize] = BaseAddressRegister::Memory((bar_value & !0xF).into());
+                            bars[i as usize] =
+                                BaseAddressRegister::Memory((bar_value & !0xF).into());
                         }
                     } else {
                         bars[i as usize] = BaseAddressRegister::Io((bar_value & !0x3).into());
@@ -149,8 +150,8 @@ impl PciDeviceHandle {
 
                     i += 1;
                 }
-                Header::Header0(Header0 {bars})
-            },
+                Header::Header0(Header0 { bars })
+            }
             0x01 => Header::Header1(Header1 {}),
             0x02 => Header::Header2(Header2 {}),
             _ => {
@@ -226,7 +227,9 @@ fn enumerate_all() -> Vec<PciDevice> {
         let mut result = Vec::new();
         for bus_number in 0..8 {
             let bus = PciDeviceHandle::new_bus(bus_number);
-            if !bus.exists() {continue;}
+            if !bus.exists() {
+                continue;
+            }
             result.append(&mut bus.enumerate_bus());
         }
         result
@@ -240,10 +243,11 @@ impl Display for Header {
                 write!(f, "Header0{{ ")?;
                 for (i, bar) in header0.bars.iter().enumerate() {
                     match bar {
-                        BaseAddressRegister::Memory(addr) => 
+                        BaseAddressRegister::Memory(addr) => {
                             if *addr != 0 {
                                 write!(f, "bar{} mem 0x{:08X} ", i, *addr)?
-                            },
+                            }
+                        }
                         BaseAddressRegister::Io(addr) => write!(f, "bar{} io 0x{:08X} ", i, *addr)?,
                     }
                 }
@@ -252,15 +256,15 @@ impl Display for Header {
             Header::Header1(_) => write!(f, "Header1"),
             Header::Header2(_) => write!(f, "Header2"),
             Header::Unknown(x) => write!(f, "Unknown({:02X})", x),
-            
         }
-        
     }
 }
 
 impl Display for PciDevice {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "PCI({:02X}:{:02X}.{:01X}, {:04X}-{:04X}, Class {:02X}-{:02X}-{:02X}, {})", 
+        write!(
+            f,
+            "PCI({:02X}:{:02X}.{:01X}, {:04X}-{:04X}, Class {:02X}-{:02X}-{:02X}, {})",
             self.handle.bus_number,
             self.handle.device_number.unwrap_or(0),
             self.handle.function_number.unwrap_or(0),

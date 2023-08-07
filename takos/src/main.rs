@@ -6,14 +6,17 @@ use core::panic::PanicInfo;
 
 extern crate alloc;
 
-
 use takobl_api::BootData;
 
-use takos::{println, hlt_loop};
-use takos::keyboard::{keyboard_driver, KeyboardEvent};
+use tako_async::{
+    executor::Executor,
+    timer::{timer_executor, Timer},
+    Task,
+};
 use takos::console::console_scroll_handler;
 use takos::keyboard::get_keyboard_event_receiver;
-use tako_async::{executor::Executor, Task, timer::{timer_executor, Timer}};
+use takos::keyboard::{keyboard_driver, KeyboardEvent};
+use takos::{hlt_loop, println};
 
 use thingbuf::mpsc::Receiver;
 
@@ -67,7 +70,7 @@ pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
     // unsafe {
     //     *(0xdeadbeef as *mut u8) = 42;
     // }
-    
+
     // println!("Hello world!");
     // println!("This is testing!");
     // println!("{}", CAT);

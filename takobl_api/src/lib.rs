@@ -40,11 +40,10 @@ impl MemoryRegion {
 }
 
 #[derive(Debug, Clone)]
-pub struct FreeMemoryMap{
+pub struct FreeMemoryMap {
     pub count: usize,
     pub data: [MemoryRegion; MAX_FREE_MEMORY],
 }
-
 
 impl FrameBufferData {
     pub fn new() -> FrameBufferData {
@@ -73,8 +72,8 @@ impl FreeMemoryMap {
     fn remove_arr(&mut self, index: usize) {
         assert!(self.count > 0);
         assert!(index < self.count);
-        for i in index..self.count-1 {
-            self.data[i] = self.data[i+1];
+        for i in index..self.count - 1 {
+            self.data[i] = self.data[i + 1];
         }
         self.count -= 1;
     }
@@ -82,7 +81,7 @@ impl FreeMemoryMap {
     fn insert(&mut self, index: usize, region: MemoryRegion) {
         assert!(self.count < self.data.len());
         for i in (index..self.count).rev() {
-            self.data[i+1] = self.data[i];
+            self.data[i + 1] = self.data[i];
         }
         self.data[index] = region;
         self.count += 1;
@@ -107,17 +106,22 @@ impl FreeMemoryMap {
                     let pages_before = (region.start - self.data[i].start) / PAGE_SIZE;
                     let pages_after = (this_end - region_end) / PAGE_SIZE;
                     self.data[i].pages = pages_before;
-                    self.insert(i+1, MemoryRegion { start: region_end, pages: pages_after });
+                    self.insert(
+                        i + 1,
+                        MemoryRegion {
+                            start: region_end,
+                            pages: pages_after,
+                        },
+                    );
                 }
                 break;
             }
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item=&MemoryRegion> {
+    pub fn iter(&self) -> impl Iterator<Item = &MemoryRegion> {
         self.data[..self.count].iter()
     }
 }
-
 
 pub const PHYSICAL_MEMORY_OFFSET: u64 = 0xFFFF_C000_0000_0000;

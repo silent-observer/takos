@@ -2,7 +2,10 @@
 
 extern crate alloc;
 
-use core::{pin::Pin, task::{Context, Poll}};
+use core::{
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use alloc::boxed::Box;
 use futures_util::Future;

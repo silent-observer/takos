@@ -1,12 +1,15 @@
 use takobl_api::PHYSICAL_MEMORY_OFFSET;
-use x86_64::{structures::paging::{PhysFrame, Size4KiB, FrameAllocator, FrameDeallocator}, PhysAddr};
+use x86_64::{
+    structures::paging::{FrameAllocator, FrameDeallocator, PhysFrame, Size4KiB},
+    PhysAddr,
+};
 
 struct FreeFrameListNode {
     next: Option<&'static mut FreeFrameListNode>,
 }
 
 struct FreeFrameList {
-    first: Option<&'static mut FreeFrameListNode>
+    first: Option<&'static mut FreeFrameListNode>,
 }
 
 pub struct UsedFrameAllocator {
@@ -16,17 +19,15 @@ pub struct UsedFrameAllocator {
 impl UsedFrameAllocator {
     pub fn new() -> Self {
         Self {
-            free_frame_list: FreeFrameList {
-                first: None,
-            }
+            free_frame_list: FreeFrameList { first: None },
         }
     }
 
     fn add_frame(&mut self, frame: PhysFrame<Size4KiB>) {
         let frame_addr = frame.start_address().as_u64() + PHYSICAL_MEMORY_OFFSET;
         let node = frame_addr as *mut FreeFrameListNode;
-        let node = unsafe{node.as_mut().unwrap()};
-        
+        let node = unsafe { node.as_mut().unwrap() };
+
         node.next = self.free_frame_list.first.take();
         self.free_frame_list.first = Some(node);
     }
@@ -36,10 +37,14 @@ impl UsedFrameAllocator {
             Some(node) => {
                 self.free_frame_list.first = node.next.take();
                 let addr = node as *mut FreeFrameListNode;
-                Some(PhysFrame::from_start_address(PhysAddr::new(addr as u64 - PHYSICAL_MEMORY_OFFSET)).unwrap())
-            },
-            None => None
-            
+                Some(
+                    PhysFrame::from_start_address(PhysAddr::new(
+                        addr as u64 - PHYSICAL_MEMORY_OFFSET,
+                    ))
+                    .unwrap(),
+                )
+            }
+            None => None,
         }
     }
 }

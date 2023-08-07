@@ -1,10 +1,14 @@
-use core::{pin::Pin, task::{Context, Poll}, sync::atomic::{AtomicBool, Ordering}};
+use core::{
+    pin::Pin,
+    sync::atomic::{AtomicBool, Ordering},
+    task::{Context, Poll},
+};
 
+use futures::{task::AtomicWaker, Stream, StreamExt};
 use thingbuf::StaticThingBuf;
-use futures::{Stream, task::AtomicWaker, StreamExt};
 use x86_64::instructions::port::Port;
 
-use crate::{println, keyboard::decoder::keycode_decoder};
+use crate::{keyboard::decoder::keycode_decoder, println};
 
 use super::commands;
 
@@ -36,7 +40,7 @@ impl Stream for ScancodeStream {
             Some(scancode) => {
                 WAKER.take();
                 Poll::Ready(Some(scancode))
-            },
+            }
             None => Poll::Pending,
         }
     }
@@ -53,31 +57,41 @@ pub fn add_scancode(scancode: u8) {
 pub async fn init_ps2_controller(scancodes: &mut ScancodeStream) {
     let mut control_port = Port::<u8>::new(0x64);
     let mut data_port = Port::<u8>::new(0x60);
-    
-    unsafe{ control_port.write(0x20) }; // Read Controller Configuration Byte 
+
+    unsafe { control_port.write(0x20) }; // Read Controller Configuration Byte
     let ccb = scancodes.next().await.unwrap();
-    
+
     let ccb_no_translation = ccb & !0x40;
-    unsafe{ control_port.write(0x60) }; // Write Controller Configuration Byte 
-    loop { // Wait until ready
-        let status = unsafe{ control_port.read() };
-        if status & 0x02 == 0 { break; }
+    unsafe { control_port.write(0x60) }; // Write Controller Configuration Byte
+    loop {
+        // Wait until ready
+        let status = unsafe { control_port.read() };
+        if status & 0x02 == 0 {
+            break;
+        }
     }
-    unsafe {data_port.write(ccb_no_translation)};
-    loop { // Wait until ready
-        let status = unsafe{ control_port.read() };
-        if status & 0x02 == 0 { break; }
+    unsafe { data_port.write(ccb_no_translation) };
+    loop {
+        // Wait until ready
+        let status = unsafe { control_port.read() };
+        if status & 0x02 == 0 {
+            break;
+        }
     }
 }
 
 pub async fn keyboard_driver() {
     let mut scancodes = ScancodeStream::new();
-    
+
     init_ps2_controller(&mut scancodes).await;
-    
-    commands::set_scancode_set(&mut scancodes, 2).await.expect("Couldn't set scancode set");
-    let scancode_set = commands::get_scancode_set(&mut scancodes).await.expect("Couldn't get scancode set");
-    println!{"Scancode set {}", scancode_set};
+
+    commands::set_scancode_set(&mut scancodes, 2)
+        .await
+        .expect("Couldn't set scancode set");
+    let scancode_set = commands::get_scancode_set(&mut scancodes)
+        .await
+        .expect("Couldn't get scancode set");
+    println! {"Scancode set {}", scancode_set};
     keycode_decoder(&mut scancodes).await;
     // while let Some(scancode) = scancodes.next().await {
     //     print!("{:02X} ", scancode);

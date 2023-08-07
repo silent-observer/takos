@@ -1,4 +1,7 @@
-use super::{keycodes::{ KeyCode, KeyState}, layout::{layout_upper_case, layout_lower_case}};
+use super::{
+    keycodes::{KeyCode, KeyState},
+    layout::{layout_lower_case, layout_upper_case},
+};
 
 use bitflags::bitflags;
 
@@ -114,11 +117,23 @@ impl TyperState {
             KeyCode::RightCtrl => self.right_ctrl = is_pressed,
             KeyCode::RightWin => self.right_win = is_pressed,
 
-            KeyCode::CapsLock => if !is_pressed {self.caps_lock = !self.caps_lock},
-            KeyCode::NumLock => if !is_pressed {self.num_lock = !self.num_lock},
-            KeyCode::ScrollLock => if !is_pressed {self.scroll_lock = !self.scroll_lock},
+            KeyCode::CapsLock => {
+                if !is_pressed {
+                    self.caps_lock = !self.caps_lock
+                }
+            }
+            KeyCode::NumLock => {
+                if !is_pressed {
+                    self.num_lock = !self.num_lock
+                }
+            }
+            KeyCode::ScrollLock => {
+                if !is_pressed {
+                    self.scroll_lock = !self.scroll_lock
+                }
+            }
 
-            _ => {},
+            _ => {}
         }
         self.form_keyboard_event(key, state)
     }

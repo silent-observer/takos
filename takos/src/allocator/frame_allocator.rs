@@ -1,6 +1,6 @@
 use spin::Mutex;
 use takobl_api::FreeMemoryMap;
-use x86_64::structures::paging::{PhysFrame, Size4KiB, FrameAllocator, FrameDeallocator};
+use x86_64::structures::paging::{FrameAllocator, FrameDeallocator, PhysFrame, Size4KiB};
 
 use super::{fresh_frame_allocator::FreshFrameAllocator, used_frame_allocator::UsedFrameAllocator};
 use lazy_static::lazy_static;
@@ -39,8 +39,9 @@ impl FrameDeallocator<Size4KiB> for TakosFrameAllocator {
     }
 }
 
-lazy_static!{
-    pub static ref FRAME_ALLOCATOR: Mutex<TakosFrameAllocator> = Mutex::new(TakosFrameAllocator::new());
+lazy_static! {
+    pub static ref FRAME_ALLOCATOR: Mutex<TakosFrameAllocator> =
+        Mutex::new(TakosFrameAllocator::new());
 }
 
 pub fn init_frame_allocator(free_memory_map: FreeMemoryMap) {
@@ -52,14 +53,14 @@ fn test_frame_allocator() {
     use crate::{print, println};
     print!("test_frame_allocator... ");
     let frame_1 = FRAME_ALLOCATOR.lock().allocate_frame().unwrap();
-    
+
     let frame_2 = FRAME_ALLOCATOR.lock().allocate_frame().unwrap();
 
-    unsafe {FRAME_ALLOCATOR.lock().deallocate_frame(frame_1)};
+    unsafe { FRAME_ALLOCATOR.lock().deallocate_frame(frame_1) };
 
     let frame_3 = FRAME_ALLOCATOR.lock().allocate_frame().unwrap();
 
     assert!(frame_3.start_address().as_u64() == frame_1.start_address().as_u64());
-    
+
     println!("[ok]");
 }

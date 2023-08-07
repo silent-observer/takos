@@ -10,30 +10,30 @@ extern crate alloc;
 #[cfg(test)]
 use core::panic::PanicInfo;
 
+use ::log::info;
 use alloc::string::ToString;
 use allocator::frame_allocator::init_frame_allocator;
 use console::init_writer;
-use display::{FrameBuffer, ColorRGB};
+use display::{ColorRGB, FrameBuffer};
 use gdt::init_gdt;
 use interrupts::init_idt;
-use ::log::info;
 use paging::{init_pat, unmap_loader_code};
 use pic::init_pics;
 use takobl_api::BootData;
 
 use crate::pci::init_pci;
 
-pub mod text;
-pub mod display;
-pub mod console;
-pub mod interrupts;
 pub mod allocator;
-pub mod paging;
+pub mod console;
+pub mod display;
 mod gdt;
-mod pic;
+pub mod interrupts;
 pub mod keyboard;
-mod pci;
 mod log;
+pub mod paging;
+mod pci;
+mod pic;
+pub mod text;
 
 pub fn init(boot_data: &BootData) {
     init_gdt();
@@ -62,7 +62,6 @@ pub fn hlt_loop() -> ! {
         x86_64::instructions::hlt();
     }
 }
-
 
 #[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

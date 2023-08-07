@@ -1,9 +1,9 @@
-use core::task::{Waker, Context, Poll};
+use core::task::{Context, Poll, Waker};
 
 use alloc::{collections::BTreeMap, sync::Arc, task::Wake};
 use thingbuf::StaticThingBuf;
 
-use super::{TaskId, Task};
+use super::{Task, TaskId};
 
 const QUEUE_CAPACITY: usize = 100;
 
@@ -20,7 +20,10 @@ impl TaskWaker {
         }))
     }
     fn wake_task(&self) {
-        self.task_queue.as_ref().push(self.task_id).expect("Task queue full!");
+        self.task_queue
+            .as_ref()
+            .push(self.task_id)
+            .expect("Task queue full!");
     }
 }
 
@@ -64,7 +67,8 @@ impl Executor {
                 None => continue,
             };
 
-            let waker = self.waker_cache
+            let waker = self
+                .waker_cache
                 .entry(task_id)
                 .or_insert_with(|| TaskWaker::new(task_id, self.task_queue.clone()));
             let mut context = Context::from_waker(waker);
@@ -72,8 +76,8 @@ impl Executor {
                 Poll::Ready(()) => {
                     self.tasks.remove(&task_id);
                     self.waker_cache.remove(&task_id);
-                },
-                Poll::Pending => {},
+                }
+                Poll::Pending => {}
             }
         }
     }

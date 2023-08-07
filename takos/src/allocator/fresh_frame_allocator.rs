@@ -1,5 +1,8 @@
 use takobl_api::FreeMemoryMap;
-use x86_64::{structures::paging::{FrameAllocator, Size4KiB, PhysFrame}, PhysAddr};
+use x86_64::{
+    structures::paging::{FrameAllocator, PhysFrame, Size4KiB},
+    PhysAddr,
+};
 
 pub struct FreshFrameAllocator {
     initial_free_memory_map: FreeMemoryMap,
@@ -13,7 +16,7 @@ impl FreshFrameAllocator {
         Self {
             initial_free_memory_map: FreeMemoryMap::new(),
             current_region: 0,
-            next_page_index: 0
+            next_page_index: 0,
         }
     }
 
