@@ -12,12 +12,13 @@ pub struct FrameBufferData {
     pub stride: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct BootData {
     pub frame_buffer: FrameBufferData,
     pub free_memory_map: FreeMemoryMap,
     pub loader_code: MemoryRegion,
     pub image_device_path: &'static str,
+    pub ramdisk: &'static mut [u8],
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -52,17 +53,6 @@ impl FrameBufferData {
             width: 0,
             height: 0,
             stride: 0,
-        }
-    }
-}
-
-impl BootData {
-    pub fn new() -> BootData {
-        BootData {
-            frame_buffer: FrameBufferData::new(),
-            free_memory_map: FreeMemoryMap::new(),
-            loader_code: MemoryRegion { start: 0, pages: 0 },
-            image_device_path: "",
         }
     }
 }

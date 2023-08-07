@@ -62,8 +62,7 @@ async fn print_keyboard_events(receiver: Receiver<KeyboardEvent>) {
 
 #[export_name = "_start"]
 pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
-    let mut boot_data_cloned = boot_data.clone();
-    takos::init(&mut boot_data_cloned);
+    takos::init(boot_data);
 
     // unsafe {
     //     *(0xdeadbeef as *mut u8) = 42;

@@ -20,6 +20,9 @@ FFFF FFFF 7FEF FFFF |                     |
                     |       MMIO          |
 FFFF F000 0000 0000 |_____________________|
 FFFF EFFF FFFF FFFF |                     |
+                    |   Initial RamDisk   |
+FFFF E800 0000 0000 |_____________________|
+FFFF E7FF FFFF FFFF |                     |
                     |     Kernel Heap     |
 FFFF D000 0000 0000 |_____________________|
 FFFF CFFF FFFF FFFF |                     |

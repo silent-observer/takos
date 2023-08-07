@@ -8,7 +8,7 @@ mod paging;
 extern crate alloc;
 
 use core::arch::asm;
-use core::mem::{size_of, transmute};
+use core::mem::{size_of, transmute, MaybeUninit};
 
 use alloc::string::ToString;
 use alloc::vec::Vec;
@@ -26,7 +26,7 @@ use elf::ElfBytes;
 use uefi::proto::device_path::DevicePath;
 use uefi::proto::device_path::text::{DisplayOnly, AllowShortcuts};
 use uefi::proto::loaded_image::LoadedImage;
-use uefi::table::boot::MemoryType;
+use uefi::table::boot::{MemoryType, PAGE_SIZE};
 use takobl_api::{FrameBufferData, BootData, PHYSICAL_MEMORY_OFFSET};
 use x86_64::structures::paging::{PageTable, OffsetPageTable};
 
@@ -43,6 +43,7 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     page_table_builder.allocate_stack();
     let boot_data = allocate_boot_data(system_table.boot_services());
     let kernel_entry = load_kernel(image_handle, system_table.boot_services(), &mut page_table_builder);
+    let ramdisk = load_ramdisk(image_handle, system_table.boot_services(), &mut page_table_builder);
 
     let device_path = get_storage_device_path(image_handle, system_table.boot_services());
 
@@ -50,10 +51,15 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     // info!("Boot Data: {:?}", boot_data);
     // print_memory_map(image_handle, &system_table);
     let (mut page_table, free_memory_map, loader_code) = page_table_builder.deconstruct();
-    boot_data.free_memory_map = free_memory_map;
-    boot_data.frame_buffer = get_gop_data(system_table.boot_services());
-    boot_data.loader_code = loader_code;
-    boot_data.image_device_path = convert_to_physical(device_path.leak());
+    unsafe {
+            boot_data.as_mut_ptr().write(BootData {
+            frame_buffer: get_gop_data(system_table.boot_services()),
+            free_memory_map,
+            loader_code,
+            image_device_path: convert_to_physical(device_path.leak()),
+            ramdisk,
+        });
+    }
     info!("Loading page table {:08X}!", page_table.level_4_table() as *mut PageTable as u64);
     info!("Page table {:?}", page_table.level_4_table()[0]);
     //let rip = x86_64::registers::read_rip();
@@ -61,7 +67,8 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     //system_table.boot_services().stall(10_000_000);
     let _ = system_table.exit_boot_services();
     //info!("Success!", "{}");
-    jump_to(kernel_entry, convert_to_physical(boot_data), &mut page_table);
+    let boot_data = unsafe{convert_to_physical(boot_data).assume_init_mut()};
+    jump_to(kernel_entry, boot_data, &mut page_table);
 }
 
 #[allow(dead_code)]
@@ -72,6 +79,30 @@ fn test_filesystem(image_handle: Handle, system_table: &SystemTable<Boot>) {
     let data = fs.read(path).expect("Couldn't read file");
     let s = String::from_utf8(data).unwrap();
     info!("File contents: {}", s);
+}
+
+fn load_ramdisk(image_handle: Handle, bs: &BootServices, page_table_builder: &mut PageTableBuilder)-> &'static mut [u8] {
+    let mut fs: fs::FileSystem<'_> = bs.get_image_file_system(image_handle)
+        .expect("Couldn't get filesystem");
+    let path = Path::new(cstr16!("ramdisk.img"));
+    let data = fs.read(path).expect("Couldn't read file");
+    
+    let mut offset = 0u64;
+    const START_VIRTUAL_ADDRESS: u64 = 0xFFFF_E800_0000_0000;
+    while offset < data.len() as u64 {
+        let size = (data.len() as u64 - offset).min(PAGE_SIZE as u64);
+        let virtual_addr = START_VIRTUAL_ADDRESS + offset;
+        let physical_addr = page_table_builder.allocate_page(virtual_addr, false);
+        unsafe {
+            let dest = physical_addr as *mut u8;
+            let src = data.as_ptr().add(offset as usize);
+            bs.memmove(dest, src, size as usize);
+        }
+        offset += size;
+    }
+    unsafe {
+        core::slice::from_raw_parts_mut(START_VIRTUAL_ADDRESS as *mut u8, data.len())
+    }
 }
 
 fn load_kernel(image_handle: Handle, bs: &BootServices, page_table_builder: &mut PageTableBuilder)-> PhysicalAddress {
@@ -185,14 +216,13 @@ fn get_gop_data(bt: &BootServices) -> FrameBufferData {
     result
 }
 
-fn allocate_boot_data(bs: &BootServices) -> &'static mut BootData {
+fn allocate_boot_data(bs: &BootServices) -> &'static mut MaybeUninit<BootData> {
     let size = size_of::<BootData>();
     let boot_data = bs
         .allocate_pool(MemoryType::LOADER_DATA, size)
         .expect("Couldn't allocate memory");
     unsafe {
-        let boot_data: *mut BootData = transmute(boot_data);
-        core::ptr::write(boot_data, BootData::new());
+        let boot_data: *mut MaybeUninit<BootData> = transmute(boot_data);
         boot_data.as_mut().unwrap()
     }
 }
