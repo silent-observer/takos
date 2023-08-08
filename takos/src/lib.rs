@@ -13,19 +13,22 @@ use core::panic::PanicInfo;
 use ::log::info;
 use alloc::string::ToString;
 use allocator::frame_allocator::init_frame_allocator;
+use conquer_once::spin::OnceCell;
 use console::init_writer;
 use display::{ColorRGB, FrameBuffer};
+use filesystem::fat::Fat32Filesystem;
 use gdt::init_gdt;
 use interrupts::init_idt;
 use paging::{init_pat, unmap_loader_code};
 use pic::init_pics;
 use takobl_api::BootData;
 
-use crate::pci::init_pci;
+use crate::{filesystem::ramdisk::RamDisk, pci::init_pci};
 
 pub mod allocator;
 pub mod console;
 pub mod display;
+mod filesystem;
 mod gdt;
 pub mod interrupts;
 pub mod keyboard;
@@ -35,7 +38,9 @@ mod pci;
 mod pic;
 pub mod text;
 
-pub fn init(boot_data: &BootData) {
+pub static RAMDISK_FILESYSTEM: OnceCell<Fat32Filesystem> = OnceCell::uninit();
+
+pub fn init(boot_data: &'static mut BootData) {
     init_gdt();
     init_idt();
     init_pat();
@@ -49,6 +54,8 @@ pub fn init(boot_data: &BootData) {
     let image_device_path = boot_data.image_device_path.to_string();
 
     unmap_loader_code(boot_data.loader_code);
+    let device = RamDisk::new(boot_data.ramdisk);
+    RAMDISK_FILESYSTEM.init_once(|| Fat32Filesystem::new(device));
 
     init_pics();
     x86_64::instructions::interrupts::enable();

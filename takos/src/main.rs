@@ -6,6 +6,7 @@ use core::panic::PanicInfo;
 
 extern crate alloc;
 
+use alloc::string::String;
 use takobl_api::BootData;
 
 use tako_async::{
@@ -13,9 +14,9 @@ use tako_async::{
     timer::{timer_executor, Timer},
     Task,
 };
-use takos::console::console_scroll_handler;
 use takos::keyboard::get_keyboard_event_receiver;
 use takos::keyboard::{keyboard_driver, KeyboardEvent};
+use takos::{console::console_scroll_handler, RAMDISK_FILESYSTEM};
 use takos::{hlt_loop, println};
 
 use thingbuf::mpsc::Receiver;
@@ -75,14 +76,60 @@ pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
     // println!("This is testing!");
     // println!("{}", CAT);
 
-    println!("Free memory regions:");
-    for region in boot_data.free_memory_map.iter() {
-        println!("{:016X}-{:016X}", region.start, region.end());
+    // println!("Free memory regions:");
+    // for region in boot_data.free_memory_map.iter() {
+    //     println!("{:016X}-{:016X}", region.start, region.end());
+    // }
+
+    println!("/:");
+    for (i, entry) in RAMDISK_FILESYSTEM
+        .get()
+        .unwrap()
+        .dir_iter("/")
+        .unwrap()
+        .enumerate()
+    {
+        println!("{}: {:?}", i, entry);
     }
+
+    println!("/efi:");
+    for (i, entry) in RAMDISK_FILESYSTEM
+        .get()
+        .unwrap()
+        .dir_iter("/efi")
+        .unwrap()
+        .enumerate()
+    {
+        println!("{}: {:?}", i, entry);
+    }
+
+    println!("/efi/boot:");
+    for (i, entry) in RAMDISK_FILESYSTEM
+        .get()
+        .unwrap()
+        .dir_iter("/efi/boot")
+        .unwrap()
+        .enumerate()
+    {
+        println!("{}: {:?}", i, entry);
+    }
+
+    println!("/test.txt:");
+    println!(
+        "{}",
+        String::from_utf8(
+            RAMDISK_FILESYSTEM
+                .get()
+                .unwrap()
+                .read_file("/test.txt")
+                .unwrap()
+        )
+        .unwrap()
+    );
 
     let mut executor = Executor::new();
     executor.spawn(Task::new(timer_executor()));
-    executor.spawn(Task::new(print_numbers()));
+    // executor.spawn(Task::new(print_numbers()));
     executor.spawn(Task::new(keyboard_driver()));
     executor.spawn(Task::new(console_scroll_handler()));
     // let reciever = get_keyboard_event_receiver();
