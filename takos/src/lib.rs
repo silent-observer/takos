@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(abi_x86_interrupt)]
 #![feature(custom_test_frameworks)]
+#![feature(naked_functions)]
 #![test_runner(crate::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
@@ -33,6 +34,7 @@ mod gdt;
 pub mod interrupts;
 pub mod keyboard;
 mod log;
+pub mod multitask;
 pub mod paging;
 mod pci;
 mod pic;

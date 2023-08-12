@@ -4,3 +4,4 @@
 esp/
 *.fish
 !runner.fish
+.gdb_history

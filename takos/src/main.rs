@@ -2,11 +2,12 @@
 #![no_main]
 #![feature(abi_x86_interrupt)]
 
-use core::panic::PanicInfo;
+use core::{arch::asm, panic::PanicInfo};
 
 extern crate alloc;
 
 use alloc::string::String;
+use log::info;
 use takobl_api::BootData;
 
 use tako_async::{
@@ -14,10 +15,10 @@ use tako_async::{
     timer::{timer_executor, Timer},
     Task,
 };
-use takos::keyboard::get_keyboard_event_receiver;
 use takos::keyboard::{keyboard_driver, KeyboardEvent};
 use takos::{console::console_scroll_handler, RAMDISK_FILESYSTEM};
 use takos::{hlt_loop, println};
+use takos::{keyboard::get_keyboard_event_receiver, multitask::scheduler::SCHEDULER};
 
 use thingbuf::mpsc::Receiver;
 
@@ -64,9 +65,23 @@ async fn print_keyboard_events(receiver: Receiver<KeyboardEvent>) {
     }
 }
 
+fn empty_task() -> ! {
+    info!("From child thread 1");
+    SCHEDULER.lock().switch_to_task(0);
+    info!("From child thread 2");
+    loop {
+        unsafe { asm!("nop") };
+    }
+}
+
 #[export_name = "_start"]
 pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
     takos::init(boot_data);
+
+    #[cfg(debug_assertions)]
+    unsafe {
+        asm!("2: jmp 2b");
+    }
 
     // unsafe {
     //     *(0xdeadbeef as *mut u8) = 42;
@@ -81,51 +96,57 @@ pub extern "C" fn _start(boot_data: &'static mut BootData) -> ! {
     //     println!("{:016X}-{:016X}", region.start, region.end());
     // }
 
-    println!("/:");
-    for (i, entry) in RAMDISK_FILESYSTEM
-        .get()
-        .unwrap()
-        .dir_iter("/")
-        .unwrap()
-        .enumerate()
-    {
-        println!("{}: {:?}", i, entry);
-    }
+    // println!("/:");
+    // for (i, entry) in RAMDISK_FILESYSTEM
+    //     .get()
+    //     .unwrap()
+    //     .dir_iter("/")
+    //     .unwrap()
+    //     .enumerate()
+    // {
+    //     println!("{}: {:?}", i, entry);
+    // }
 
-    println!("/efi:");
-    for (i, entry) in RAMDISK_FILESYSTEM
-        .get()
-        .unwrap()
-        .dir_iter("/efi")
-        .unwrap()
-        .enumerate()
-    {
-        println!("{}: {:?}", i, entry);
-    }
+    // println!("/efi:");
+    // for (i, entry) in RAMDISK_FILESYSTEM
+    //     .get()
+    //     .unwrap()
+    //     .dir_iter("/efi")
+    //     .unwrap()
+    //     .enumerate()
+    // {
+    //     println!("{}: {:?}", i, entry);
+    // }
 
-    println!("/efi/boot:");
-    for (i, entry) in RAMDISK_FILESYSTEM
-        .get()
-        .unwrap()
-        .dir_iter("/efi/boot")
-        .unwrap()
-        .enumerate()
-    {
-        println!("{}: {:?}", i, entry);
-    }
+    // println!("/efi/boot:");
+    // for (i, entry) in RAMDISK_FILESYSTEM
+    //     .get()
+    //     .unwrap()
+    //     .dir_iter("/efi/boot")
+    //     .unwrap()
+    //     .enumerate()
+    // {
+    //     println!("{}: {:?}", i, entry);
+    // }
 
-    println!("/test.txt:");
-    println!(
-        "{}",
-        String::from_utf8(
-            RAMDISK_FILESYSTEM
-                .get()
-                .unwrap()
-                .read_file("/test.txt")
-                .unwrap()
-        )
-        .unwrap()
-    );
+    // println!("/test.txt:");
+    // println!(
+    //     "{}",
+    //     String::from_utf8(
+    //         RAMDISK_FILESYSTEM
+    //             .get()
+    //             .unwrap()
+    //             .read_file("/test.txt")
+    //             .unwrap()
+    //     )
+    //     .unwrap()
+    // );
+
+    let task_id = SCHEDULER.lock().new_task(5, empty_task);
+    info!("Created child thread");
+    SCHEDULER.lock().switch_to_task(task_id);
+    info!("From main thread");
+    SCHEDULER.lock().switch_to_task(task_id);
 
     let mut executor = Executor::new();
     executor.spawn(Task::new(timer_executor()));
